@@ -1,0 +1,25 @@
+{
+  "_comment": "DRAFT. Bone ids are from memory; regenerate from a real skeleton dump in Phase 1 before trusting any of this.",
+  "rig": "genesis9",
+  "root": "hip",
+  "chains": {
+    "l_arm": { "bones": ["l_upperarm", "l_forearm", "l_hand"],
+               "twist": { "l_upperarm": ["l_upperarmtwist1", "l_upperarmtwist2"],
+                          "l_forearm":  ["l_forearmtwist1",  "l_forearmtwist2"] },
+               "pole": "back" },
+    "r_arm": { "bones": ["r_upperarm", "r_forearm", "r_hand"],
+               "twist": { "r_upperarm": ["r_upperarmtwist1", "r_upperarmtwist2"],
+                          "r_forearm":  ["r_forearmtwist1",  "r_forearmtwist2"] },
+               "pole": "back" },
+    "l_leg": { "bones": ["l_thigh", "l_shin", "l_foot"],
+               "twist": { "l_thigh": ["l_thightwist1", "l_thightwist2"] },
+               "pole": "front" },
+    "r_leg": { "bones": ["r_thigh", "r_shin", "r_foot"],
+               "twist": { "r_thigh": ["r_thightwist1", "r_thightwist2"] },
+               "pole": "front" },
+    "spine": { "bones": ["pelvis", "spine1", "spine2", "spine3", "spine4"] },
+    "neck":  { "bones": ["neck1", "neck2", "head"] }
+  },
+  "grabbable": ["hip", "pelvis", "spine*", "neck*", "head", "l_*", "r_*"],
+  "hidden":    ["*_eye*", "jaw*", "*lip*", "*brow*", "*cheek*", "*nose*", "*tongue*", "*eyelid*"]
+}

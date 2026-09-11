@@ -1,0 +1,24 @@
+# Visual Studio / CMake
+.vs/
+out/
+CMakeSettings.json
+*.user
+
+# Unity (client/)
+client/[Ll]ibrary/
+client/[Tt]emp/
+client/[Oo]bj/
+client/[Bb]uild/
+client/[Bb]uilds/
+client/[Ll]ogs/
+client/[Uu]ser[Ss]ettings/
+client/*.csproj
+client/*.sln
+client/.vsconfig
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# OS
+Thumbs.db
+.DS_Store
