@@ -41,8 +41,9 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `ping` | control | — | **Phase 0 ✓** |
 | `scene.request` | control | `textures: none\|opacity\|full, tex_max, influences: 4\|8, include_hidden, meshes` | **Phase 1b ✓** |
 | `asset.request` | bulk | `hashes: [...]` | **Phase 1b ✓** |
-| `pose.commit` | control | `figure, bones: [[id, qx, qy, qz, qw], …], label` | Phase 2 |
-| `select` | control | `node, bone?` | Phase 2 |
+| `pose.commit` | control | `figure, bones: [[id, x, y, z, w], …], label, selftest?` — each bone's target **world** rotation in Daz's quaternion sense; applied parents-first via `DzNode::setWSRot` as one undo step named `label`. Confirmation is the `pose.state` that follows (~100 ms), carrying whatever limits clamped. | **Phase 2a ✓** |
+| `selftest.begin` | control | `figure` | **Phase 2a ✓** — plugin snapshots the figure's Euler controls and sends a `pose.state` with `selftest: true`; the client echoes it as `pose.commit {selftest: true}`; plugin applies it without undo, compares, restores, answers `selftest.result`. |
+| `select` | control | `node, bone?` | Phase 4 |
 | `node.transform` | control | `node, pos, rot, scale, commit` | Phase 3 |
 | `camera.set` | control | `camera, pos, rot, focal_mm, commit` | Phase 3 |
 | `pose.preview` | control | `figure, bones` | **reserved, v2** — v1 plugin answers `error deferred_v2` |
@@ -58,7 +59,8 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `progress` | control | `op, done, total, label` | Phase 1b |
 | `scene.manifest` | control | `manifest: {…}` — see below | **Phase 1b ✓** |
 | `asset.data` | bulk | `hash, kind, size` + payload | **Phase 1b ✓** (unknown hash → `error asset_unknown` with `hash`) |
-| `pose.state` | control | `figure, bones` | Phase 2 |
+| `pose.state` | control | `figure, bones: [ { id, ws: { pos, rot } } ], selftest?` — every bone's Daz world transform. Sent whenever any bone of that figure moves (debounced 100 ms), after a `pose.commit`, and for `selftest.begin`. | **Phase 2a ✓** |
+| `selftest.result` | control | `figure, pass, bones, max_error_deg, worst, error?` | **Phase 2a ✓** (pass = every Euler control back within 0.01°) |
 | `node.state` | control | `node, pos, rot, scale` | Phase 3 |
 
 ## Manifest (`scene.manifest.manifest`)
@@ -129,7 +131,8 @@ are not shipped yet.
 ## Error codes
 
 `hello_required`, `protocol_mismatch`, `bad_role`, `bad_pairing_code`, `unknown_session`,
-`wrong_connection`, `asset_unknown`, `not_implemented`, `deferred_v2`, `unknown_type`.
+`wrong_connection`, `asset_unknown`, `commit_failed`, `selftest_state`, `not_implemented`,
+`deferred_v2`, `unknown_type`.
 
 ## Conventions the client must honor
 

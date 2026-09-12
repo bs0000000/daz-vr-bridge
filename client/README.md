@@ -31,6 +31,18 @@ On Play the loader requests the scene, pulls assets it has not cached, and build
 pose and a `mesh` child carrying the SkinnedMeshRenderer; followers under their figure.
 Assets are cached in `%USERPROFILE%\AppData\LocalLow\<company>\<product>\bridge-cache`.
 
+## Round trip without a headset (Phase 2a)
+
+Add **PoseSync** to the `Bridge` object. In Play mode with the Game view focused:
+
+| Key | Action |
+|---|---|
+| **T** | Self-test: Daz sends its pose, the client echoes it, Daz checks every Euler control came back within 0.01°. Result on the HUD. |
+| **C** | Commit: every bone whose rotation changed since the last Daz state is sent as one undo step ("VR pose"). Rotate a bone under `DazScene/<figure>/skeleton` with the Scene-view gizmo first. |
+| **R** | Re-request the scene. |
+
+Pose a bone in Daz Studio (Posing tab or the viewport tool) and the headset follows within ~100 ms.
+
 ## Files
 
 | File | Role |
@@ -42,4 +54,5 @@ Assets are cached in `%USERPROFILE%\AppData\LocalLow\<company>\<product>\bridge-
 | `DazSpace.cs` | The only place that knows Daz units/handedness. cm→m, Z mirror, quaternion map. |
 | `DzmChunks.cs` | Parsers for the `DZM1` mesh and `DZS1` skin chunks. |
 | `AssetCache.cs` | Content-addressed disk cache with SHA-1 verification. |
-| `SceneLoader.cs` | manifest → GameObjects; skeletons at bind pose, skinned meshes, materials. |
+| `SceneLoader.cs` | manifest → GameObjects; skeletons at bind pose, skinned meshes, materials; `ApplyWorldPose` / `DazWorldRotOf` for the pose round trip. |
+| `PoseSync.cs` | `pose.state` in, `pose.commit` out, self-test; keyboard triggers for editor testing. |

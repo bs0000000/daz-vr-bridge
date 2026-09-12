@@ -12,8 +12,10 @@
 #include <QStringList>
 
 #include "bridge_protocol.h"
+#include "pose_apply.h"
 #include "scene_bake.h"
 
+class DzSkeleton;
 class QTcpServer;
 class QTcpSocket;
 
@@ -66,6 +68,9 @@ private:
 	void	handleHello( Connection &c, const Frame &f );
 	void	handleSceneRequest( Connection &c, const Frame &f );
 	void	handleAssetRequest( Connection &c, const Frame &f );
+	void	handlePoseCommit( Connection &c, const Frame &f );
+	void	handleSelfTestBegin( Connection &c, const Frame &f );
+	void	onFigureChanged( DzSkeleton* figure );
 
 	void	send( QTcpSocket* socket, const QJsonObject &header, const QByteArray &payload = QByteArray() );
 	void	sendError( Connection &c, const Frame &ref, const QString &code, const QString &msg );
@@ -80,6 +85,8 @@ private:
 	QTcpServer*						m_server = nullptr;
 	QHash<QTcpSocket*, Connection>	m_connections;
 	QHash<QString, BakedAsset>		m_assets;	// last bake, by content hash
+	PoseWatcher*					m_poseWatcher = nullptr;
+	EulerSnapshot					m_selfTest;	// pending self-test, empty figureId when none
 	QString							m_pairingCode;
 	bool							m_pairingRequired = true;
 	qint64							m_seq = 0;

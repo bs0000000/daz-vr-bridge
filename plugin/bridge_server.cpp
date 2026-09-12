@@ -12,6 +12,7 @@
 
 #include "dzapp.h"
 #include "dzscene.h"
+#include "dzskeleton.h"
 
 #include "scene_bake.h"
 #include "version.h"
@@ -65,6 +66,11 @@ Server::Server( QObject* parent ) :
 	connect( dzScene, &DzScene::sceneLoaded, this, [this]() { onSceneChanged( "loaded" ); } );
 	connect( dzScene, &DzScene::sceneCleared, this, [this]() { onSceneChanged( "cleared" ); } );
 	connect( dzScene, &DzScene::sceneFilenameChanged, this, [this]( const QString & ) { onSceneChanged( "renamed" ); } );
+
+	// Desk-side pose edits -> pose.state to every control connection.
+	m_poseWatcher = new PoseWatcher( this );
+	connect( m_poseWatcher, &PoseWatcher::figureChanged, this, &Server::onFigureChanged );
+	m_poseWatcher->rescan();
 }
 
 bool Server::start( quint16 port, QString* errorOut )
@@ -247,10 +253,21 @@ void Server::handleFrame( Connection &c, const Frame &f )
 		return;
 	}
 
-	// Phase 2+ : posing
-	if ( type == "pose.commit" || type == "select" )
+	if ( type == "pose.commit" )
 	{
-		sendError( c, f, "not_implemented", type % " arrives in Phase 2" );
+		handlePoseCommit( c, f );
+		return;
+	}
+
+	if ( type == "selftest.begin" )
+	{
+		handleSelfTestBegin( c, f );
+		return;
+	}
+
+	if ( type == "select" )
+	{
+		sendError( c, f, "not_implemented", "select arrives with the posing UX" );
 		return;
 	}
 
@@ -346,7 +363,12 @@ void Server::handleSceneRequest( Connection &c, const Frame &f )
 	log( QString( "Baking scene (textures=%1, influences=%2, meshes=%3)" )
 		.arg( opts.textures ).arg( opts.influences ).arg( opts.meshes ? "yes" : "no" ) );
 
+	// The bake's zero-pose freeze fires transformChanged on every bone; that is
+	// not a pose the client should hear about.
+	m_poseWatcher->setSuppressed( true );
 	BakeResult result = bakeScene( opts );
+	m_poseWatcher->setSuppressed( false );
+	m_poseWatcher->rescan();
 	for ( const QString &line : result.log )
 	{
 		log( "  " % line );
@@ -417,6 +439,94 @@ void Server::handleAssetRequest( Connection &c, const Frame &f )
 
 	log( QString( "Sent %1 of %2 requested assets (%3 MB)" )
 		.arg( sent ).arg( hashes.size() ).arg( bytes / ( 1024.0 * 1024.0 ), 0, 'f', 1 ) );
+}
+
+void Server::handlePoseCommit( Connection &c, const Frame &f )
+{
+	if ( c.role != "control" )
+	{
+		sendError( c, f, "wrong_connection", "pose.commit belongs on the control connection" );
+		return;
+	}
+
+	const bool selfTest = f.header.value( "selftest" ).toBool( false );
+	if ( selfTest )
+	{
+		// Echo of a selftest.begin: apply without undo, compare, restore, report.
+		if ( m_selfTest.figureId.isEmpty() || m_selfTest.figureId != f.header.value( "figure" ).toString() )
+		{
+			sendError( c, f, "selftest_state", "no self-test pending for that figure" );
+			return;
+		}
+		m_poseWatcher->setSuppressed( true );
+		const CommitResult r = applyPoseCommit( f.header, QString() );
+		QString worst;
+		const double maxErr = r.ok ? compareEulers( m_selfTest, &worst ) : 1e9;
+		restoreEulers( m_selfTest );
+		m_poseWatcher->setSuppressed( false );
+
+		const bool pass = r.ok && maxErr < 0.01;
+		QJsonObject h;
+		h[ "t" ] = "selftest.result";
+		h[ "seq" ] = m_seq++;
+		h[ "ref_seq" ] = f.seq();
+		h[ "figure" ] = m_selfTest.figureId;
+		h[ "pass" ] = pass;
+		h[ "bones" ] = r.applied;
+		h[ "max_error_deg" ] = maxErr;
+		h[ "worst" ] = worst;
+		if ( !r.ok ) h[ "error" ] = r.error;
+		send( c.socket, h );
+
+		log( QString( "Self-test %1: %2 bones, max error %3 deg (%4)" )
+			.arg( pass ? "PASS" : "FAIL" ).arg( r.applied ).arg( maxErr, 0, 'f', 4 ).arg( worst ) );
+		m_selfTest = EulerSnapshot();
+		return;
+	}
+
+	const QString label = f.header.value( "label" ).toString( "VR pose" );
+	const CommitResult r = applyPoseCommit( f.header, label );
+	if ( !r.ok )
+	{
+		sendError( c, f, "commit_failed", r.error );
+		return;
+	}
+	log( QString( "Applied pose: %1 bones (\"%2\")" ).arg( r.applied ).arg( label ) );
+	// The watcher broadcasts pose.state for this figure ~100 ms later; that is
+	// the client's confirmation and carries whatever limits clamped.
+}
+
+void Server::handleSelfTestBegin( Connection &c, const Frame &f )
+{
+	DzSkeleton* figure = qobject_cast<DzSkeleton*>( findNodeById( f.header.value( "figure" ).toString() ) );
+	if ( !figure )
+	{
+		sendError( c, f, "commit_failed", "figure not found" );
+		return;
+	}
+
+	m_selfTest = snapshotEulers( figure );
+
+	QJsonObject h = poseStateFor( figure );
+	h[ "t" ] = "pose.state";
+	h[ "seq" ] = m_seq++;
+	h[ "ref_seq" ] = f.seq();
+	h[ "selftest" ] = true;
+	send( c.socket, h );
+
+	log( QString( "Self-test started on %1 (%2 bones)" ).arg( figure->getLabel() ).arg( m_selfTest.rotDeg.size() ) );
+}
+
+void Server::onFigureChanged( DzSkeleton* figure )
+{
+	if ( m_connections.isEmpty() )
+	{
+		return;
+	}
+	QJsonObject h = poseStateFor( figure );
+	h[ "t" ] = "pose.state";
+	h[ "seq" ] = m_seq++;
+	broadcastControl( h );
 }
 
 //////////////////////////////////////////////////////////////////////////

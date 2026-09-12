@@ -11,6 +11,7 @@ namespace DazVrBridge
     {
         public BridgeSession session;
         public SceneLoader loader; // optional
+        public PoseSync poseSync;  // optional
         public TMP_Text text;
 
         string _dazVersion = "";
@@ -21,6 +22,7 @@ namespace DazVrBridge
         {
             if (!session) session = FindAnyObjectByType<BridgeSession>();
             if (!loader) loader = FindAnyObjectByType<SceneLoader>();
+            if (!poseSync) poseSync = FindAnyObjectByType<PoseSync>();
             if (session)
             {
                 session.ControlFrame += OnFrame;
@@ -29,9 +31,12 @@ namespace DazVrBridge
             Render();
         }
 
+        string _lastSelfTest = "";
+
         void Update()
         {
             if (loader && loader.Busy) Render();
+            if (poseSync && poseSync.LastSelfTest != _lastSelfTest) { _lastSelfTest = poseSync.LastSelfTest; Render(); }
         }
 
         void OnFrame(BridgeFrame f)
@@ -70,7 +75,8 @@ namespace DazVrBridge
                 case BridgeClient.State.Connected:
                     var name = string.IsNullOrEmpty(_scenePath) ? "(unsaved scene)" : Path.GetFileName(_scenePath);
                     var status = loader ? "\n" + loader.Status : "";
-                    text.text = $"<b>{name}</b>\n{_sceneNodes} nodes · Daz Studio {_dazVersion}{status}";
+                    var selfTest = poseSync && poseSync.LastSelfTest.Length > 0 ? "\n" + poseSync.LastSelfTest : "";
+                    text.text = $"<b>{name}</b>\n{_sceneNodes} nodes · Daz Studio {_dazVersion}{status}{selfTest}";
                     break;
                 case BridgeClient.State.Failed:
                     text.text = $"Failed: {session.Control.LastError}\nretrying…";

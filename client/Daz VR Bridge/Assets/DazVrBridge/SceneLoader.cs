@@ -39,6 +39,21 @@ namespace DazVrBridge
         GameObject _root;
         bool _requested;
 
+        // Loaded figures by Daz node id, for PoseSync and (later) the posing UX.
+        public sealed class LoadedFigure
+        {
+            public string Id;
+            public string Label;
+            public GameObject Go;
+            public Transform[] Bones;
+            public JArray BoneJson;                 // manifest skeleton.bones, same order as Bones
+            public Dictionary<string, int> ByName;
+            public Matrix4x4[] BindPoses;
+        }
+        public readonly Dictionary<string, LoadedFigure> Figures = new Dictionary<string, LoadedFigure>();
+        public Transform Root => _root ? _root.transform : null;
+        public event System.Action SceneBuilt;
+
         void Start()
         {
             if (!session) session = FindAnyObjectByType<BridgeSession>();
@@ -142,16 +157,10 @@ namespace DazVrBridge
         // ------------------------------------------------------------------
         // building
 
-        struct Figure
-        {
-            public GameObject Go;
-            public Transform[] Bones;
-            public Matrix4x4[] BindPoses;
-        }
-
         void Build()
         {
             if (_root) Destroy(_root);
+            Figures.Clear();
 
             // The whole Daz scene lives under this component's GameObject, so moving,
             // rotating or scaling that object places the scene relative to the XR rig.
@@ -159,7 +168,7 @@ namespace DazVrBridge
             _root.transform.SetParent(transform, false);
 
             var byId = new Dictionary<string, GameObject>();
-            var figures = new Dictionary<string, Figure>();
+            var figures = Figures;
             var nodes = (JArray)_manifest["nodes"];
 
             // Pass 1: node objects at their Daz world transforms, expressed relative to the root.
@@ -213,13 +222,23 @@ namespace DazVrBridge
             Busy = false;
             Status = $"loaded {nodes.Count} nodes, {figures.Count} figures";
             Debug.Log($"[DazVrBridge] {Status}");
+            SceneBuilt?.Invoke();
         }
 
-        Figure BuildFigure(JObject n, GameObject go)
+        LoadedFigure BuildFigure(JObject n, GameObject go)
         {
             var bones = (JArray)n["skeleton"]["bones"];
-            var fig = new Figure { Go = go, Bones = new Transform[bones.Count], BindPoses = new Matrix4x4[bones.Count] };
             var byName = new Dictionary<string, int>();
+            var fig = new LoadedFigure
+            {
+                Id = n.Value<string>("id"),
+                Label = n.Value<string>("label"),
+                Go = go,
+                Bones = new Transform[bones.Count],
+                BoneJson = bones,
+                ByName = byName,
+                BindPoses = new Matrix4x4[bones.Count],
+            };
             var skel = new GameObject("skeleton").transform;
             skel.SetParent(go.transform, false);
 
@@ -246,7 +265,7 @@ namespace DazVrBridge
             for (var i = 0; i < bones.Count; i++)
                 fig.BindPoses[i] = fig.Bones[i].worldToLocalMatrix * go.transform.localToWorldMatrix;
 
-            if (applyCurrentPose) ApplyWorldPose(bones, fig, byName);
+            if (applyCurrentPose) ApplyWorldPose(fig, bones);
 
             AddSkinnedMesh(n, go, fig);
             return fig;
@@ -259,33 +278,51 @@ namespace DazVrBridge
         //   rotation = root.rotation * W_unity * Rot(orient)
         // (the orient factor matches the bind hierarchy and cancels inside the skinning).
         // Parents are assigned before children so every world assignment is final.
-        void ApplyWorldPose(JArray bones, Figure fig, Dictionary<string, int> byName)
+        //
+        // `wsBones` is any array of { id, ws:{pos,rot} } — the manifest's skeleton.bones
+        // or a pose.state payload. Bones missing from it keep their current transform.
+        public void ApplyWorldPose(LoadedFigure fig, JArray wsBones)
         {
-            var depth = new int[bones.Count];
-            for (var i = 0; i < bones.Count; i++)
+            var target = new Dictionary<int, JToken>();
+            foreach (JObject b in wsBones)
             {
-                var d = 0;
-                for (var p = bones[i].Value<string>("parent"); p != null && byName.TryGetValue(p, out var pi); p = bones[pi].Value<string>("parent"))
-                    d++;
-                depth[i] = d;
+                var ws = b["ws"];
+                if (ws != null && fig.ByName.TryGetValue(b.Value<string>("id"), out var i)) target[i] = ws;
             }
-            var order = new List<int>();
-            for (var i = 0; i < bones.Count; i++) order.Add(i);
-            order.Sort((a, b) => depth[a].CompareTo(depth[b]));
+
+            var order = new List<int>(target.Keys);
+            order.Sort((a, b) => BoneDepth(fig, a).CompareTo(BoneDepth(fig, b)));
 
             var root = _root.transform;
             foreach (var i in order)
             {
-                var b = (JObject)bones[i];
-                var ws = b["ws"];
-                if (ws == null) continue;
+                var ws = target[i];
                 var bone = fig.Bones[i];
                 bone.position = root.TransformPoint(DazSpace.Pos(ws["pos"]));
-                bone.rotation = root.rotation * DazSpace.RotFromDazWorld(ws["rot"]) * DazSpace.Rot(b["orient"]);
+                bone.rotation = root.rotation * DazSpace.RotFromDazWorld(ws["rot"]) * DazSpace.Rot(fig.BoneJson[i]["orient"]);
             }
         }
 
-        void AddSkinnedMesh(JObject n, GameObject go, Figure fig)
+        // Inverse of the rotation half of ApplyWorldPose: a Unity bone's current world
+        // rotation expressed as Daz's ws.rot (Daz quaternion sense, Daz world space).
+        public float[] DazWorldRotOf(LoadedFigure fig, int boneIndex)
+        {
+            var root = _root.transform;
+            var wUnity = Quaternion.Inverse(root.rotation) * fig.Bones[boneIndex].rotation
+                       * Quaternion.Inverse(DazSpace.Rot(fig.BoneJson[boneIndex]["orient"]));
+            // RotFromDazWorld is (x, y, -z, w) and is its own inverse.
+            return new[] { wUnity.x, wUnity.y, -wUnity.z, wUnity.w };
+        }
+
+        public static int BoneDepth(LoadedFigure fig, int i)
+        {
+            var d = 0;
+            for (var p = fig.BoneJson[i].Value<string>("parent"); p != null && fig.ByName.TryGetValue(p, out var pi); p = fig.BoneJson[pi].Value<string>("parent"))
+                d++;
+            return d;
+        }
+
+        void AddSkinnedMesh(JObject n, GameObject go, LoadedFigure fig)
         {
             var meshHash = n.Value<string>("mesh");
             var skinHash = n.Value<string>("skin");
