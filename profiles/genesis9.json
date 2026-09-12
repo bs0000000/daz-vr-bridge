@@ -1,25 +1,83 @@
 {
-  "_comment": "DRAFT. Bone ids are from memory; regenerate from a real skeleton dump in Phase 1 before trusting any of this.",
+  "_comment": "Written against a real Genesis 9 skeleton dump (138 bones, Asha 9, Daz Studio 6.25). See genesis9.bones.txt for the full tree with rotation orders.",
   "rig": "genesis9",
   "root": "hip",
+
   "chains": {
-    "l_arm": { "bones": ["l_upperarm", "l_forearm", "l_hand"],
-               "twist": { "l_upperarm": ["l_upperarmtwist1", "l_upperarmtwist2"],
-                          "l_forearm":  ["l_forearmtwist1",  "l_forearmtwist2"] },
-               "pole": "back" },
-    "r_arm": { "bones": ["r_upperarm", "r_forearm", "r_hand"],
-               "twist": { "r_upperarm": ["r_upperarmtwist1", "r_upperarmtwist2"],
-                          "r_forearm":  ["r_forearmtwist1",  "r_forearmtwist2"] },
-               "pole": "back" },
-    "l_leg": { "bones": ["l_thigh", "l_shin", "l_foot"],
-               "twist": { "l_thigh": ["l_thightwist1", "l_thightwist2"] },
-               "pole": "front" },
-    "r_leg": { "bones": ["r_thigh", "r_shin", "r_foot"],
-               "twist": { "r_thigh": ["r_thightwist1", "r_thightwist2"] },
-               "pole": "front" },
-    "spine": { "bones": ["pelvis", "spine1", "spine2", "spine3", "spine4"] },
+    "l_arm": {
+      "bones": ["l_upperarm", "l_forearm", "l_hand"],
+      "hinge": { "l_forearm": "y" },
+      "twist": {
+        "l_upperarm": ["l_upperarmtwist1", "l_upperarmtwist2"],
+        "l_forearm":  ["l_forearmtwist1",  "l_forearmtwist2"]
+      },
+      "pole": "back"
+    },
+    "r_arm": {
+      "bones": ["r_upperarm", "r_forearm", "r_hand"],
+      "hinge": { "r_forearm": "y" },
+      "twist": {
+        "r_upperarm": ["r_upperarmtwist1", "r_upperarmtwist2"],
+        "r_forearm":  ["r_forearmtwist1",  "r_forearmtwist2"]
+      },
+      "pole": "back"
+    },
+    "l_leg": {
+      "bones": ["l_thigh", "l_shin", "l_foot"],
+      "hinge": { "l_shin": "x" },
+      "twist": { "l_thigh": ["l_thightwist1", "l_thightwist2"] },
+      "pole": "front"
+    },
+    "r_leg": {
+      "bones": ["r_thigh", "r_shin", "r_foot"],
+      "hinge": { "r_shin": "x" },
+      "twist": { "r_thigh": ["r_thightwist1", "r_thightwist2"] },
+      "pole": "front"
+    },
+    "spine": { "bones": ["spine1", "spine2", "spine3", "spine4"] },
     "neck":  { "bones": ["neck1", "neck2", "head"] }
   },
-  "grabbable": ["hip", "pelvis", "spine*", "neck*", "head", "l_*", "r_*"],
-  "hidden":    ["*_eye*", "jaw*", "*lip*", "*brow*", "*cheek*", "*nose*", "*tongue*", "*eyelid*"]
+
+  "grabbable": [
+    "hip", "pelvis",
+    "spine1", "spine2", "spine3", "spine4",
+    "neck1", "neck2", "head",
+    "l_shoulder", "l_upperarm", "l_forearm", "l_hand",
+    "r_shoulder", "r_upperarm", "r_forearm", "r_hand",
+    "l_thigh", "l_shin", "l_foot", "l_toes",
+    "r_thigh", "r_shin", "r_foot", "r_toes",
+    "l_eye", "r_eye"
+  ],
+
+  "fingers": {
+    "_comment": "Exposed as a group the user can toggle; hidden by default in VR.",
+    "l_hand": ["l_thumb1", "l_thumb2", "l_thumb3",
+               "l_index1", "l_index2", "l_index3",
+               "l_mid1", "l_mid2", "l_mid3",
+               "l_ring1", "l_ring2", "l_ring3",
+               "l_pinky1", "l_pinky2", "l_pinky3"],
+    "r_hand": ["r_thumb1", "r_thumb2", "r_thumb3",
+               "r_index1", "r_index2", "r_index3",
+               "r_mid1", "r_mid2", "r_mid3",
+               "r_ring1", "r_ring2", "r_ring3",
+               "r_pinky1", "r_pinky2", "r_pinky3"]
+  },
+
+  "hidden": {
+    "_comment": "Never shown as handles in VR. Twist bones are written by the IK solver; the rest is face/desk work.",
+    "patterns": [
+      "*twist*",
+      "*metacarpal", "*_metatarsal", "*_hand_anchor",
+      "*toe1", "*toe2",
+      "*_pectoral",
+      "upperfacerig", "lowerfacerig", "lowerjaw", "chin",
+      "upperteeth", "lowerteeth", "tongue*",
+      "*lip*", "*brow*", "*cheek*", "*nostril*", "*squint", "*infraorbital", "*eyelid*",
+      "l_ear", "r_ear"
+    ]
+  },
+
+  "mirror": { "prefix_left": "l_", "prefix_right": "r_" },
+
+  "rotation_orders_seen": { "YZX": 18, "ZYX": 58, "XYZ": 44, "XZY": 12, "ZXY": 6 }
 }

@@ -4,3 +4,10 @@
 *.bat text eol=crlf
 *.png binary
 *.dll binary
+
+# Macros used by client/Daz VR Bridge/.gitattributes (Unity template).
+# Git only honors [attr] macro definitions in the top-level file.
+# No git-lfs in this repo: the template's "lfs" class is treated as plain binary.
+[attr]lfs         binary
+[attr]unity-json  eol=lf linguist-language=json
+[attr]unity-yaml  merge=unityyamlmerge eol=lf linguist-language=yaml

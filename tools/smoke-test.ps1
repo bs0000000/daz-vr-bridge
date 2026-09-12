@@ -8,7 +8,8 @@
 param(
     [string]$HostName = "127.0.0.1",
     [int]$Port = 41427,
-    [string]$Code = ""
+    [string]$Code = "",
+    [string]$ManifestOut = (Join-Path $PSScriptRoot "last-manifest.json")
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,13 +64,36 @@ $pong = Read-Frame $stream
 Write-Host "<- $($pong | ConvertTo-Json -Compress)"
 
 Send-Frame $stream @{ t = "scene.request"; seq = (++$seq); textures = "opacity" }
-$err = Read-Frame $stream
-Write-Host "<- $($err | ConvertTo-Json -Compress)"
-
+$stream.ReadTimeout = 60000
+$reply = Read-Frame $stream
 $client.Close()
-if ($pong.t -eq "pong" -and $err.t -eq "error" -and $err.code -eq "not_implemented") {
-    Write-Host "PASS: hello/welcome, ping/pong, and not_implemented all behave"
+
+if ($reply.t -ne "scene.manifest") {
+    Write-Host "<- $($reply | ConvertTo-Json -Compress)"
+    Write-Host "FAIL: expected scene.manifest"
+    exit 1
+}
+
+$m = $reply.manifest
+$m | ConvertTo-Json -Depth 12 | Set-Content -Path $ManifestOut -Encoding UTF8
+Write-Host "<- scene.manifest: $($m.nodes.Count) nodes, saved to $ManifestOut"
+
+$m.nodes | Group-Object type | ForEach-Object { Write-Host ("   {0,-9} {1}" -f $_.Name, $_.Count) }
+
+$figures = @($m.nodes | Where-Object { $_.type -eq "figure" })
+foreach ($fig in $figures) {
+    $bones = $fig.skeleton.bones
+    Write-Host ""
+    Write-Host "figure '$($fig.label)'  rig=$($fig.rig)  bones=$($bones.Count)  asset=$($fig.asset_id)"
+    $orders = $bones | Group-Object rot_order | ForEach-Object { "$($_.Name)x$($_.Count)" }
+    Write-Host "   rotation orders: $($orders -join ', ')"
+    Write-Host "   first bones: $(($bones | Select-Object -First 12 | ForEach-Object { $_.id }) -join ', ')"
+}
+
+if ($pong.t -eq "pong") {
+    Write-Host ""
+    Write-Host "PASS: hello/welcome, ping/pong, scene.manifest"
     exit 0
 }
-Write-Host "FAIL: unexpected replies"
+Write-Host "FAIL: no pong"
 exit 1

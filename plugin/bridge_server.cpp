@@ -13,6 +13,7 @@
 #include "dzapp.h"
 #include "dzscene.h"
 
+#include "scene_bake.h"
 #include "version.h"
 
 namespace DazVrBridge {
@@ -234,10 +235,31 @@ void Server::handleFrame( Connection &c, const Frame &f )
 		return;
 	}
 
-	// Phase 1+ : scene bake and asset streaming
-	if ( type == "scene.request" || type == "asset.request" )
+	if ( type == "scene.request" )
 	{
-		sendError( c, f, "not_implemented", type % " arrives in Phase 1" );
+		if ( c.role != "control" )
+		{
+			sendError( c, f, "wrong_connection", "scene.request belongs on the control connection" );
+			return;
+		}
+		const BakeOptions opts = bakeOptionsFromJson( f.header );
+		log( QString( "Baking manifest (textures=%1, influences=%2)" ).arg( opts.textures ).arg( opts.influences ) );
+
+		QJsonObject h;
+		h[ "t" ] = "scene.manifest";
+		h[ "seq" ] = m_seq++;
+		h[ "ref_seq" ] = f.seq();
+		h[ "manifest" ] = buildManifest( opts );
+		send( c.socket, h );
+
+		log( QString( "Manifest sent: %1 nodes" ).arg( h[ "manifest" ].toObject().value( "nodes" ).toArray().size() ) );
+		return;
+	}
+
+	// Phase 1b : asset streaming
+	if ( type == "asset.request" )
+	{
+		sendError( c, f, "not_implemented", "asset.request arrives in Phase 1b" );
 		return;
 	}
 
