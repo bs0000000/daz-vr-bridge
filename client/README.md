@@ -21,10 +21,25 @@ The bridge scripts live in `Daz VR Bridge/Assets/DazVrBridge/`.
 5. Press Play. The HUD shows the scene name, node count and Daz version, and follows
    File → Open / New in Daz Studio.
 
+## Scene setup (Phase 1b)
+
+One GameObject (call it `Bridge`) with **BridgeSession** (host/port/pairing code) and
+**SceneLoader** (bake options; leave `textures` at `none` for now). The world-space text
+gets **BridgeHud** with the session and loader assigned (it also finds them by itself).
+On Play the loader requests the scene, pulls assets it has not cached, and builds a
+`DazScene` object: one child per Daz node, figures with a `skeleton` hierarchy at bind
+pose and a `mesh` child carrying the SkinnedMeshRenderer; followers under their figure.
+Assets are cached in `%USERPROFILE%\AppData\LocalLow\<company>\<product>\bridge-cache`.
+
 ## Files
 
 | File | Role |
 |---|---|
 | `BridgeFrame.cs` | Frame encode/decode. Mirror of `plugin/bridge_protocol.*`. |
 | `BridgeClient.cs` | One connection (control or bulk). Background reader, main-thread `Pump()`. |
-| `BridgeHud.cs` | Phase 0 smoke test: connect, ping, show the open scene. |
+| `BridgeSession.cs` | Owns the control + bulk connections for the app; others subscribe to its frames. |
+| `BridgeHud.cs` | Status text: connection, open scene, load progress. |
+| `DazSpace.cs` | The only place that knows Daz units/handedness. cm→m, Z mirror, quaternion map. |
+| `DzmChunks.cs` | Parsers for the `DZM1` mesh and `DZS1` skin chunks. |
+| `AssetCache.cs` | Content-addressed disk cache with SHA-1 verification. |
+| `SceneLoader.cs` | manifest → GameObjects; skeletons at bind pose, skinned meshes, materials. |

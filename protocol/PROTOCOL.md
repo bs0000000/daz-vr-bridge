@@ -39,8 +39,8 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 |---|---|---|---|
 | `hello` | both | `protocol:1, role, client, session?, code?` | **Phase 0 ✓** |
 | `ping` | control | — | **Phase 0 ✓** |
-| `scene.request` | control | `textures: none\|opacity\|full, tex_max, influences: 4\|8, include_hidden` | **Phase 1a ✓** (node graph + skeletons; no meshes yet) |
-| `asset.request` | bulk | `hashes: [...]` | Phase 1b |
+| `scene.request` | control | `textures: none\|opacity\|full, tex_max, influences: 4\|8, include_hidden, meshes` | **Phase 1b ✓** |
+| `asset.request` | bulk | `hashes: [...]` | **Phase 1b ✓** |
 | `pose.commit` | control | `figure, bones: [[id, qx, qy, qz, qw], …], label` | Phase 2 |
 | `select` | control | `node, bone?` | Phase 2 |
 | `node.transform` | control | `node, pos, rot, scale, commit` | Phase 3 |
@@ -56,8 +56,8 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `error` | both | `code, msg, ref_seq` | **Phase 0 ✓** |
 | `scene.changed` | control | `reason: loaded\|cleared\|renamed\|…, scene:{path, nodes}` | **Phase 0 ✓** (structure diff fields arrive in Phase 3) |
 | `progress` | control | `op, done, total, label` | Phase 1b |
-| `scene.manifest` | control | `manifest: {…}` — see below | **Phase 1a ✓** |
-| `asset.data` | bulk | `hash, kind, size` + payload | Phase 1b |
+| `scene.manifest` | control | `manifest: {…}` — see below | **Phase 1b ✓** |
+| `asset.data` | bulk | `hash, kind, size` + payload | **Phase 1b ✓** (unknown hash → `error asset_unknown` with `hash`) |
 | `pose.state` | control | `figure, bones` | Phase 2 |
 | `node.state` | control | `node, pos, rot, scale` | Phase 3 |
 
@@ -89,10 +89,47 @@ nodes:  [ {
 
 Bone ids are DAZ bone *names* (unique within a figure). Node ids are session-stable element ids.
 
+Nodes with geometry also carry `mesh`, `skin` (figures/followers) and `materials` — each a
+`sha1:<hex>` content hash listed in `assets` — plus `vertices` and `triangles` counts.
+Followers' skin indices refer to the **figure's** bone list (their own bones are remapped by
+name, follower-only bones fold into the nearest figure ancestor).
+
+## Asset chunks (`asset.data` payloads) — all little-endian
+
+**`mesh` — `DZM1`.** Positions are node-local, centimeters, Daz handedness; vertices are
+already split on UV seams so UVs are per-vertex. Triangles are grouped by material.
+
+```
+char[4] "DZM1"
+u32     vertex_count
+u32     triangle_count
+u32     flags            bit0: uvs present
+u32     group_count
+f32[3]  position   × vertex_count
+f32[2]  uv         × vertex_count        (only if flags & 1)
+u32[3]  triangle   × triangle_count      Daz winding (flip for Unity)
+{ u32 start_tri, u32 tri_count, u16 material_index, u16 pad } × group_count
+```
+
+**`skin` — `DZS1`.** Same vertex order as the mesh chunk. Influences are top-N, normalized,
+padded with weight 0.
+
+```
+char[4] "DZS1"
+u32     vertex_count
+u8      influences (4 | 8), u8[3] pad
+per vertex: u16[influences] bone_index, f32[influences] weight
+```
+
+**`materials` — JSON.** `{ materials: [ { index, name, base_color:[r,g,b] 0–1,
+opacity_map: path|null, color_map: path|null } ] }`. Map entries are paths on the Daz
+machine, present only when the requested texture mode includes them; texture bytes
+are not shipped yet.
+
 ## Error codes
 
 `hello_required`, `protocol_mismatch`, `bad_role`, `bad_pairing_code`, `unknown_session`,
-`not_implemented`, `deferred_v2`, `unknown_type`.
+`wrong_connection`, `asset_unknown`, `not_implemented`, `deferred_v2`, `unknown_type`.
 
 ## Conventions the client must honor
 

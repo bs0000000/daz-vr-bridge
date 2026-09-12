@@ -237,29 +237,13 @@ void Server::handleFrame( Connection &c, const Frame &f )
 
 	if ( type == "scene.request" )
 	{
-		if ( c.role != "control" )
-		{
-			sendError( c, f, "wrong_connection", "scene.request belongs on the control connection" );
-			return;
-		}
-		const BakeOptions opts = bakeOptionsFromJson( f.header );
-		log( QString( "Baking manifest (textures=%1, influences=%2)" ).arg( opts.textures ).arg( opts.influences ) );
-
-		QJsonObject h;
-		h[ "t" ] = "scene.manifest";
-		h[ "seq" ] = m_seq++;
-		h[ "ref_seq" ] = f.seq();
-		h[ "manifest" ] = buildManifest( opts );
-		send( c.socket, h );
-
-		log( QString( "Manifest sent: %1 nodes" ).arg( h[ "manifest" ].toObject().value( "nodes" ).toArray().size() ) );
+		handleSceneRequest( c, f );
 		return;
 	}
 
-	// Phase 1b : asset streaming
 	if ( type == "asset.request" )
 	{
-		sendError( c, f, "not_implemented", "asset.request arrives in Phase 1b" );
+		handleAssetRequest( c, f );
 		return;
 	}
 
@@ -348,6 +332,91 @@ void Server::handleHello( Connection &c, const Frame &f )
 
 	log( QString( "%1 joined as %2 (%3, session %4)" )
 		.arg( h.value( "client" ).toString( "client" ), role, peerString( c.socket ), c.session.left( 8 ) ) );
+}
+
+void Server::handleSceneRequest( Connection &c, const Frame &f )
+{
+	if ( c.role != "control" )
+	{
+		sendError( c, f, "wrong_connection", "scene.request belongs on the control connection" );
+		return;
+	}
+
+	const BakeOptions opts = bakeOptionsFromJson( f.header );
+	log( QString( "Baking scene (textures=%1, influences=%2, meshes=%3)" )
+		.arg( opts.textures ).arg( opts.influences ).arg( opts.meshes ? "yes" : "no" ) );
+
+	BakeResult result = bakeScene( opts );
+	for ( const QString &line : result.log )
+	{
+		log( "  " % line );
+	}
+
+	// Replace the asset store wholesale: hashes from an older bake that are
+	// still valid are re-listed by the new manifest anyway.
+	m_assets.clear();
+	for ( const BakedAsset &a : result.assets )
+	{
+		m_assets.insert( a.hash, a );
+	}
+
+	QJsonObject h;
+	h[ "t" ] = "scene.manifest";
+	h[ "seq" ] = m_seq++;
+	h[ "ref_seq" ] = f.seq();
+	h[ "manifest" ] = result.manifest;
+	send( c.socket, h );
+
+	const QJsonObject bake = result.manifest.value( "bake" ).toObject();
+	log( QString( "Manifest sent: %1 nodes, %2 assets (%3 MB) in %4 ms" )
+		.arg( result.manifest.value( "nodes" ).toArray().size() )
+		.arg( result.assets.size() )
+		.arg( bake.value( "asset_bytes" ).toDouble() / ( 1024.0 * 1024.0 ), 0, 'f', 1 )
+		.arg( bake.value( "ms" ).toDouble(), 0, 'f', 0 ) );
+}
+
+void Server::handleAssetRequest( Connection &c, const Frame &f )
+{
+	if ( c.role != "bulk" )
+	{
+		sendError( c, f, "wrong_connection", "asset.request belongs on the bulk connection" );
+		return;
+	}
+
+	const QJsonArray hashes = f.header.value( "hashes" ).toArray();
+	int sent = 0;
+	qint64 bytes = 0;
+	for ( const QJsonValue &v : hashes )
+	{
+		const QString hash = v.toString();
+		auto it = m_assets.constFind( hash );
+		if ( it == m_assets.constEnd() )
+		{
+			QJsonObject h;
+			h[ "t" ] = "error";
+			h[ "seq" ] = m_seq++;
+			h[ "ref_seq" ] = f.seq();
+			h[ "code" ] = "asset_unknown";
+			h[ "msg" ] = QString( "no such asset in the last bake: " % hash );
+			h[ "hash" ] = hash;
+			send( c.socket, h );
+			continue;
+		}
+
+		QJsonObject h;
+		h[ "t" ] = "asset.data";
+		h[ "seq" ] = m_seq++;
+		h[ "ref_seq" ] = f.seq();
+		h[ "hash" ] = it->hash;
+		h[ "kind" ] = it->kind;
+		h[ "size" ] = it->bytes.size();
+		send( c.socket, h, it->bytes );
+		++sent;
+		bytes += it->bytes.size();
+	}
+
+	log( QString( "Sent %1 of %2 requested assets (%3 MB)" )
+		.arg( sent ).arg( hashes.size() ).arg( bytes / ( 1024.0 * 1024.0 ), 0, 'f', 1 ) );
 }
 
 //////////////////////////////////////////////////////////////////////////

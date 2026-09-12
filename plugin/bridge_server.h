@@ -12,6 +12,7 @@
 #include <QStringList>
 
 #include "bridge_protocol.h"
+#include "scene_bake.h"
 
 class QTcpServer;
 class QTcpSocket;
@@ -63,6 +64,8 @@ private:
 
 	void	handleFrame( Connection &c, const Frame &f );
 	void	handleHello( Connection &c, const Frame &f );
+	void	handleSceneRequest( Connection &c, const Frame &f );
+	void	handleAssetRequest( Connection &c, const Frame &f );
 
 	void	send( QTcpSocket* socket, const QJsonObject &header, const QByteArray &payload = QByteArray() );
 	void	sendError( Connection &c, const Frame &ref, const QString &code, const QString &msg );
@@ -76,6 +79,7 @@ private:
 
 	QTcpServer*						m_server = nullptr;
 	QHash<QTcpSocket*, Connection>	m_connections;
+	QHash<QString, BakedAsset>		m_assets;	// last bake, by content hash
 	QString							m_pairingCode;
 	bool							m_pairingRequired = true;
 	qint64							m_seq = 0;

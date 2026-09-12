@@ -41,7 +41,17 @@ function Read-Frame($stream) {
     $body = Read-Exactly $stream $frameLen
     $headerLen = [BitConverter]::ToUInt32($body, 0)
     $json = [System.Text.Encoding]::UTF8.GetString($body, 4, $headerLen)
-    return ($json | ConvertFrom-Json)
+    $header = $json | ConvertFrom-Json
+    $payloadLen = $frameLen - 4 - $headerLen
+    $payload = New-Object byte[] $payloadLen
+    if ($payloadLen -gt 0) { [Array]::Copy($body, 4 + $headerLen, $payload, 0, $payloadLen) }
+    $header | Add-Member -NotePropertyName payload -NotePropertyValue $payload -Force
+    return $header
+}
+
+function Get-Sha1Hex([byte[]]$bytes) {
+    $sha = [System.Security.Cryptography.SHA1]::Create()
+    return "sha1:" + (([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant())
 }
 
 $seq = 0
@@ -56,17 +66,16 @@ $hello = @{ t = "hello"; seq = (++$seq); protocol = 1; role = "control"; client 
 if ($Code) { $hello.code = $Code }
 Send-Frame $stream $hello
 $welcome = Read-Frame $stream
-Write-Host "<- $($welcome | ConvertTo-Json -Compress)"
+Write-Host "<- $($welcome | Select-Object -ExcludeProperty payload | ConvertTo-Json -Compress)"
 if ($welcome.t -ne "welcome") { Write-Host "handshake refused"; exit 1 }
 
 Send-Frame $stream @{ t = "ping"; seq = (++$seq) }
 $pong = Read-Frame $stream
-Write-Host "<- $($pong | ConvertTo-Json -Compress)"
+Write-Host "<- $($pong | Select-Object -ExcludeProperty payload | ConvertTo-Json -Compress)"
 
-Send-Frame $stream @{ t = "scene.request"; seq = (++$seq); textures = "opacity" }
-$stream.ReadTimeout = 60000
+Send-Frame $stream @{ t = "scene.request"; seq = (++$seq); textures = "opacity"; meshes = $true }
+$stream.ReadTimeout = 120000
 $reply = Read-Frame $stream
-$client.Close()
 
 if ($reply.t -ne "scene.manifest") {
     Write-Host "<- $($reply | ConvertTo-Json -Compress)"
@@ -87,13 +96,41 @@ foreach ($fig in $figures) {
     Write-Host "figure '$($fig.label)'  rig=$($fig.rig)  bones=$($bones.Count)  asset=$($fig.asset_id)"
     $orders = $bones | Group-Object rot_order | ForEach-Object { "$($_.Name)x$($_.Count)" }
     Write-Host "   rotation orders: $($orders -join ', ')"
-    Write-Host "   first bones: $(($bones | Select-Object -First 12 | ForEach-Object { $_.id }) -join ', ')"
+    Write-Host "   mesh: $($fig.vertices) verts, $($fig.triangles) tris"
 }
 
-if ($pong.t -eq "pong") {
+# --- assets over a bulk connection
+$assets = @($m.assets)
+Write-Host ""
+Write-Host "bake: $($m.bake.ms) ms, $($assets.Count) assets, $([math]::Round($m.bake.asset_bytes / 1MB, 1)) MB"
+$assetsOk = $true
+if ($assets.Count -gt 0) {
+    $bulk = New-Object System.Net.Sockets.TcpClient
+    $bulk.Connect($HostName, $Port)
+    $bs = $bulk.GetStream()
+    $bs.ReadTimeout = 120000
+    $bhello = @{ t = "hello"; seq = 1; protocol = 1; role = "bulk"; client = "smoke-test.ps1"; session = $welcome.session }
+    if ($Code) { $bhello.code = $Code }
+    Send-Frame $bs $bhello
+    $bw = Read-Frame $bs
+    if ($bw.t -ne "welcome") { Write-Host "<- $($bw | ConvertTo-Json -Compress)"; Write-Host "FAIL: bulk handshake"; exit 1 }
+
+    Send-Frame $bs @{ t = "asset.request"; seq = 2; hashes = @($assets | ForEach-Object { $_.hash }) }
+    foreach ($a in $assets) {
+        $d = Read-Frame $bs
+        if ($d.t -ne "asset.data") { Write-Host "   <- $($d.t) $($d.code) $($d.msg)"; $assetsOk = $false; continue }
+        $ok = (Get-Sha1Hex $d.payload) -eq $d.hash
+        if (-not $ok) { $assetsOk = $false }
+        Write-Host ("   {0,-9} {1,10:N0} bytes  {2}  {3}" -f $d.kind, $d.payload.Length, $d.hash.Substring(0, 13), $(if ($ok) { "hash ok" } else { "HASH MISMATCH" }))
+    }
+    $bulk.Close()
+}
+$client.Close()
+
+if ($pong.t -eq "pong" -and $assetsOk) {
     Write-Host ""
-    Write-Host "PASS: hello/welcome, ping/pong, scene.manifest"
+    Write-Host "PASS: hello/welcome, ping/pong, scene.manifest, assets verified"
     exit 0
 }
-Write-Host "FAIL: no pong"
+Write-Host "FAIL"
 exit 1

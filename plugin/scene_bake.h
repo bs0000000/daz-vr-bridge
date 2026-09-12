@@ -2,12 +2,12 @@
 
 // Builds the scene manifest the VR client loads: every node with its type,
 // world transform and (for figures/followers) the full skeleton with per-bone
-// rotation orders, limits and rest geometry.
-//
-// Phase 1a: node graph + skeletons only. Meshes, skin weights and materials
-// (the content-addressed assets) come in Phase 1b.
+// rotation orders, limits and rest geometry — plus, in Phase 1b, the
+// content-addressed mesh/skin/material assets each node references.
 
+#include <QByteArray>
 #include <QJsonObject>
+#include <QList>
 #include <QString>
 
 namespace DazVrBridge {
@@ -18,9 +18,24 @@ struct BakeOptions
 	int		texMax = 1024;
 	int		influences = 4;			// skin influences per vertex, 4 or 8
 	bool	includeHidden = false;
+	bool	meshes = true;			// false: manifest only (skeletons, transforms)
+};
+
+struct BakedAsset
+{
+	QString		hash;	// "sha1:<hex>"
+	QString		kind;	// mesh | skin | materials
+	QByteArray	bytes;
+};
+
+struct BakeResult
+{
+	QJsonObject			manifest;
+	QList<BakedAsset>	assets;
+	QStringList			log;
 };
 
 BakeOptions	bakeOptionsFromJson( const QJsonObject &header );
-QJsonObject	buildManifest( const BakeOptions &opts );
+BakeResult	bakeScene( const BakeOptions &opts );
 
 } // namespace DazVrBridge
