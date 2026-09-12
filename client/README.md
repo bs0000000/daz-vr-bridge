@@ -1,12 +1,11 @@
 # client
 
-Unity 6 LTS project. The Unity project itself is not committed yet — create it, then drop
-`Assets/DazVrBridge/` in. Once the project exists, commit it and delete this paragraph.
+Unity 6 LTS project: `Daz VR Bridge/`. Open it from Unity Hub (Add → pick that folder).
+The bridge scripts live in `Daz VR Bridge/Assets/DazVrBridge/`.
 
-## Set up (Phase 0)
+## How it was set up (Phase 0)
 
-1. **Unity Hub → New project → 3D (URP)**, Unity 6 LTS, location: this `client/` folder
-   (so `Assets/DazVrBridge/` lands inside it).
+1. **Unity Hub → New project → 3D (URP)**, Unity 6 LTS, location: this `client/` folder.
 2. **Window → Package Manager**:
    - *XR Plugin Management* → after install, Project Settings → XR Plug-in Management →
      tick **OpenXR** (Windows tab). In the OpenXR settings add an interaction profile for

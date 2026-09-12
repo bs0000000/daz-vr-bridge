@@ -4,17 +4,19 @@ out/
 CMakeSettings.json
 *.user
 
-# Unity (client/)
-client/[Ll]ibrary/
-client/[Tt]emp/
-client/[Oo]bj/
-client/[Bb]uild/
-client/[Bb]uilds/
-client/[Ll]ogs/
-client/[Uu]ser[Ss]ettings/
-client/*.csproj
-client/*.sln
-client/.vsconfig
+# Unity project lives at client/<Project Name>/
+client/*/[Ll]ibrary/
+client/*/[Tt]emp/
+client/*/[Oo]bj/
+client/*/[Bb]uild/
+client/*/[Bb]uilds/
+client/*/[Ll]ogs/
+client/*/[Uu]ser[Ss]ettings/
+client/*/*.csproj
+client/*/*.sln
+client/*/.vsconfig
+client/*/UpgradeLog*.htm
+client/*/.idea/
 *.pidb.meta
 *.pdb.meta
 *.mdb.meta
