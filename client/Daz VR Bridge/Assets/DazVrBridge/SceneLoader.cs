@@ -44,6 +44,7 @@ namespace DazVrBridge
         {
             public string Id;
             public string Label;
+            public string Rig;                      // "genesis9", "genesis8", … from the manifest
             public GameObject Go;
             public Transform[] Bones;
             public JArray BoneJson;                 // manifest skeleton.bones, same order as Bones
@@ -233,6 +234,7 @@ namespace DazVrBridge
             {
                 Id = n.Value<string>("id"),
                 Label = n.Value<string>("label"),
+                Rig = n.Value<string>("rig"),
                 Go = go,
                 Bones = new Transform[bones.Count],
                 BoneJson = bones,

@@ -43,6 +43,28 @@ Add **PoseSync** to the `Bridge` object. In Play mode with the Game view focused
 
 Pose a bone in Daz Studio (Posing tab or the viewport tool) and the headset follows within ~100 ms.
 
+## Grabbing bones in VR (Phase 2b)
+
+No XR Interaction Toolkit rig needed. Two components:
+
+- **VrRig** on `XR Origin (VR)`: spawns a Left/Right hand under the Camera Offset at
+  runtime, tracked via the Input System's `<XRController>` layout (OpenXR must have an
+  interaction profile for your controllers enabled — Project Settings → XR Plug-in
+  Management → OpenXR → Interaction Profiles).
+- **BoneHandles** on the `Bridge` object: after each load, a small sphere at every
+  grabbable bone from the figure's rig profile (`Resources/RigProfiles/<rig>.json`, kept
+  in sync with `/profiles`).
+
+Hover a handle (yellow), squeeze **grip** (green) and turn your hand: the bone rotates
+about its own origin, children follow. Let go and the figure is committed to Daz as one
+undo step named after the bone; Daz's answering `pose.state` snaps anything its limits
+clamped. Face, twist and finger bones have no handles by design.
+
+Keep `Bridge` (BridgeSession, SceneLoader, PoseSync, BoneHandles) as a plain object at
+the scene root rather than under the Canvas — the Canvas is scaled 0.001 and `DazScene`
+is parented to the SceneLoader's object. Place `Bridge` about 1.5 m in front of the
+XR Origin.
+
 ## Files
 
 | File | Role |
@@ -56,3 +78,6 @@ Pose a bone in Daz Studio (Posing tab or the viewport tool) and the headset foll
 | `AssetCache.cs` | Content-addressed disk cache with SHA-1 verification. |
 | `SceneLoader.cs` | manifest → GameObjects; skeletons at bind pose, skinned meshes, materials; `ApplyWorldPose` / `DazWorldRotOf` for the pose round trip. |
 | `PoseSync.cs` | `pose.state` in, `pose.commit` out, self-test; keyboard triggers for editor testing. |
+| `RigProfile.cs` | Loads `Resources/RigProfiles/<rig>.json`: grabbable/hidden bones, chains, mirror prefixes. |
+| `BoneHandle.cs` / `BoneHandles.cs` | Grab spheres on grabbable bones, spawned per figure after load. |
+| `VrHand.cs` / `VrRig.cs` | Tracked controllers from the Input System; hover/grip FK grab; commit on release. |

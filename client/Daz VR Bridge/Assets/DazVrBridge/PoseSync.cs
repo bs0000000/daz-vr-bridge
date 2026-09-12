@@ -34,6 +34,16 @@ namespace DazVrBridge
         // Per figure: each bone's rotation as last confirmed by Daz (pose.state or manifest).
         readonly Dictionary<string, Quaternion[]> _known = new Dictionary<string, Quaternion[]>();
 
+        // Figures with a bone currently held in VR: incoming pose.state is dropped for
+        // them so Daz's last confirmation cannot fight the hand. The commit on release
+        // produces a fresh pose.state anyway.
+        readonly HashSet<string> _grabbed = new HashSet<string>();
+
+        public void SetGrabbed(string figureId, bool on)
+        {
+            if (on) _grabbed.Add(figureId); else _grabbed.Remove(figureId);
+        }
+
         void Start()
         {
             if (!session) session = FindAnyObjectByType<BridgeSession>();
@@ -83,6 +93,7 @@ namespace DazVrBridge
         {
             var id = h.Value<string>("figure");
             if (!loader.Figures.TryGetValue(id, out var fig)) return;
+            if (_grabbed.Contains(id)) return;
 
             loader.ApplyWorldPose(fig, (JArray)h["bones"]);
             Snapshot(fig);
