@@ -26,8 +26,8 @@ namespace DazVrBridge
         [Range(4, 8)] public int influences = 4;
 
         [Header("Display")]
-        [Tooltip("Apply each bone's current q_local on top of bind pose. Unverified until Phase 2.")]
-        public bool applyCurrentPose = false;
+        [Tooltip("Pose bones from each bone's Daz world transform (ws), so the figure stands as it does in Daz Studio.")]
+        public bool applyCurrentPose = true;
         public Material clayMaterial; // optional; instances get the base color
 
         public string Status { get; private set; } = "";
@@ -246,17 +246,43 @@ namespace DazVrBridge
             for (var i = 0; i < bones.Count; i++)
                 fig.BindPoses[i] = fig.Bones[i].worldToLocalMatrix * go.transform.localToWorldMatrix;
 
-            if (applyCurrentPose)
-            {
-                for (var i = 0; i < bones.Count; i++)
-                {
-                    var q = bones[i]["q_local"];
-                    if (q != null) fig.Bones[i].localRotation = fig.Bones[i].localRotation * DazSpace.Rot(q);
-                }
-            }
+            if (applyCurrentPose) ApplyWorldPose(bones, fig, byName);
 
             AddSkinnedMesh(n, go, fig);
             return fig;
+        }
+
+        // Daz skinning is  p' = ws.pos + S * W * (p - origin)  with W the bone's world
+        // rotation (Hamilton sense = conj of Daz's ws.rot). With bindposes taken from the
+        // bind hierarchy above, that is reproduced by giving each bone the world transform
+        //   position = root * Pos(ws.pos)
+        //   rotation = root.rotation * W_unity * Rot(orient)
+        // (the orient factor matches the bind hierarchy and cancels inside the skinning).
+        // Parents are assigned before children so every world assignment is final.
+        void ApplyWorldPose(JArray bones, Figure fig, Dictionary<string, int> byName)
+        {
+            var depth = new int[bones.Count];
+            for (var i = 0; i < bones.Count; i++)
+            {
+                var d = 0;
+                for (var p = bones[i].Value<string>("parent"); p != null && byName.TryGetValue(p, out var pi); p = bones[pi].Value<string>("parent"))
+                    d++;
+                depth[i] = d;
+            }
+            var order = new List<int>();
+            for (var i = 0; i < bones.Count; i++) order.Add(i);
+            order.Sort((a, b) => depth[a].CompareTo(depth[b]));
+
+            var root = _root.transform;
+            foreach (var i in order)
+            {
+                var b = (JObject)bones[i];
+                var ws = b["ws"];
+                if (ws == null) continue;
+                var bone = fig.Bones[i];
+                bone.position = root.TransformPoint(DazSpace.Pos(ws["pos"]));
+                bone.rotation = root.rotation * DazSpace.RotFromDazWorld(ws["rot"]) * DazSpace.Rot(b["orient"]);
+            }
         }
 
         void AddSkinnedMesh(JObject n, GameObject go, Figure fig)

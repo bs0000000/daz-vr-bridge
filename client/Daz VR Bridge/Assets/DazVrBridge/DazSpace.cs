@@ -41,6 +41,16 @@ namespace DazVrBridge
             return Rot(arr[0].Value<float>(), arr[1].Value<float>(), arr[2].Value<float>(), arr[3].Value<float>());
         }
 
+        // Daz's DzQuat rotates vectors as q* v q — the conjugate of the Hamilton
+        // convention Unity uses. Verified against a posed Genesis 9 arm chain:
+        // ws_child.pos == ws_parent.pos + S * R(conj(ws.rot)) * (origin_child - origin_parent)
+        // to 0.000 cm. So a Daz WORLD rotation becomes a Unity rotation by
+        // conjugating first, then mirroring: (x, y, z, w) -> (x, y, -z, w).
+        public static Quaternion RotFromDazWorld(JToken arr)
+        {
+            return new Quaternion(arr[0].Value<float>(), arr[1].Value<float>(), -arr[2].Value<float>(), arr[3].Value<float>());
+        }
+
         // Back to Daz for anything we send (Phase 2).
         public static float[] ToDazPos(Vector3 p)
         {

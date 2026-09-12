@@ -134,5 +134,14 @@ are not shipped yet.
 ## Conventions the client must honor
 
 - Units: centimeters. Up: +Y. Handedness: right (DAZ). Convert on import, once.
-- Bone rotations are quaternions in the bone's oriented local frame, relative to zero pose.
+- **Daz quaternions are the conjugate of the Hamilton "rotate a vector" convention**
+  (DzQuat rotates as `q* v q`). Verified on a posed Genesis 9 arm chain, 0.000 cm residual:
+  `ws_child.pos = ws_parent.pos + S · R(conj(ws.rot)) · (origin_child − origin_parent)`
+  where `S` is the figure node's scale, and `ws_child.rot = q_local_child ⊗ ws_parent.rot`
+  (Hamilton product, local on the left — i.e. standard `world = parent · local` once
+  conjugated). Bone skinning is `p' = ws.pos + S · R(conj(ws.rot)) · (p − origin)` with `p`
+  in figure space.
+- `q_local` relates to the Euler controls as `o⁻¹ · (q₁q₂q₃)⁻¹ · o` (o = `orient`, qᵢ = axis
+  rotations in `rot_order` order, System.Numerics product semantics). Clients should pose
+  from `ws` (no frame ambiguity) and let the plugin do Euler conversion on commit.
 - Never more than one `pose.commit` in flight.

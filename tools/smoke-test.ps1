@@ -9,7 +9,8 @@ param(
     [string]$HostName = "127.0.0.1",
     [int]$Port = 41427,
     [string]$Code = "",
-    [string]$ManifestOut = (Join-Path $PSScriptRoot "last-manifest.json")
+    [string]$ManifestOut = (Join-Path $PSScriptRoot "last-manifest.json"),
+    [switch]$SaveAssets   # also write each asset to tools/assets/<hex>.bin
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,6 +122,11 @@ if ($assets.Count -gt 0) {
         if ($d.t -ne "asset.data") { Write-Host "   <- $($d.t) $($d.code) $($d.msg)"; $assetsOk = $false; continue }
         $ok = (Get-Sha1Hex $d.payload) -eq $d.hash
         if (-not $ok) { $assetsOk = $false }
+        if ($SaveAssets) {
+            $dir = Join-Path $PSScriptRoot "assets"
+            if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+            [IO.File]::WriteAllBytes((Join-Path $dir ($d.hash.Substring(5) + ".bin")), $d.payload)
+        }
         Write-Host ("   {0,-9} {1,10:N0} bytes  {2}  {3}" -f $d.kind, $d.payload.Length, $d.hash.Substring(0, 13), $(if ($ok) { "hash ok" } else { "HASH MISMATCH" }))
     }
     $bulk.Close()
