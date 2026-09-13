@@ -65,6 +65,76 @@ namespace DazVrBridge
             return status;
         }
 
+        // Inverse of Check: the bone's Daz world rotation for given Daz X/Y/Z values.
+        //   E        = R_a3(v3) R_a2(v2) R_a1(v1)
+        //   q_local  = inverse(orient) (x) conj(E) (x) orient
+        //   ws_child = q_local (x) ws_parent
+        public static Quaternion DazWorldRotFromEuler(SceneLoader loader, SceneLoader.LoadedFigure fig, int boneIndex, Vector3 deg)
+        {
+            var order = fig.RotOrder[boneIndex];
+            var e = AxisQuat(order[2], Component(deg, order[2]))
+                  * AxisQuat(order[1], Component(deg, order[1]))
+                  * AxisQuat(order[0], Component(deg, order[0]));
+
+            var o = fig.OrientDaz[boneIndex];
+            var qLocal = Conj(o) * Conj(e) * o;
+
+            var parent = fig.ParentBone[boneIndex];
+            var wsParent = parent >= 0 ? loader.DazWorldRotQ(fig, parent) : Quaternion.identity;
+            return qLocal * wsParent;
+        }
+
+        // Inverse of SceneLoader.DazWorldRotQ.
+        public static void SetDazWorldRot(SceneLoader loader, SceneLoader.LoadedFigure fig, int boneIndex, Quaternion dazRaw)
+        {
+            var wUnity = new Quaternion(dazRaw.x, dazRaw.y, -dazRaw.z, dazRaw.w);
+            fig.Bones[boneIndex].rotation = loader.Root.rotation * wUnity * fig.OrientUnity[boneIndex];
+        }
+
+        // Pulls a bone back inside its Daz limits, the way Daz will on commit. Children
+        // keep their local transforms, so the rest of the limb follows. Returns how many
+        // degrees it had to move, 0 when the bone was already legal (or is unclamped:
+        // Daz only enforces limits on properties whose "clamped" flag is set).
+        public static float ClampToLimits(SceneLoader loader, SceneLoader.LoadedFigure fig, int boneIndex)
+        {
+            if (!fig.Clamped[boneIndex]) return 0f;
+            var status = Check(loader, fig, boneIndex);
+            if (!status.Valid || status.Worst <= 0.01f) return 0f;
+
+            var min = fig.LimitMin[boneIndex];
+            var max = fig.LimitMax[boneIndex];
+            var clamped = new Vector3(
+                Mathf.Clamp(status.Euler.x, min.x, max.x),
+                Mathf.Clamp(status.Euler.y, min.y, max.y),
+                Mathf.Clamp(status.Euler.z, min.z, max.z));
+
+            SetDazWorldRot(loader, fig, boneIndex, DazWorldRotFromEuler(loader, fig, boneIndex, clamped));
+            return status.Worst;
+        }
+
+        static Quaternion AxisQuat(char axis, float degrees)
+        {
+            var half = degrees * 0.5f * Mathf.Deg2Rad;
+            var s = Mathf.Sin(half);
+            var c = Mathf.Cos(half);
+            switch (Axis(axis))
+            {
+                case 0: return new Quaternion(s, 0f, 0f, c);
+                case 1: return new Quaternion(0f, s, 0f, c);
+                default: return new Quaternion(0f, 0f, s, c);
+            }
+        }
+
+        static float Component(Vector3 v, char axis)
+        {
+            switch (Axis(axis))
+            {
+                case 0: return v.x;
+                case 1: return v.y;
+                default: return v.z;
+            }
+        }
+
         static float Overshoot(float value, float min, float max)
         {
             if (value < min) return min - value;

@@ -53,6 +53,11 @@ namespace DazVrBridge
         public int[] ControlledBones { get; private set; }
         float _overLimit;
 
+        // Set by BoneHandles.
+        public SceneLoader Loader;
+        public bool ClampToLimits = true;
+        public int IkIterations = 4;
+
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
         static readonly Color IkColor = new Color(0.3f, 0.8f, 0.85f, 1f);
@@ -198,11 +203,7 @@ namespace DazVrBridge
             if (_ik != null)
             {
                 // Carry the hand/foot; the limb above solves to reach it.
-                var targetPos = hand.position + hand.rotation * _offsetPos;
-                AimShoulder(targetPos);
-                TwoBoneIk.Solve(Figure.Bones[_ikRoot], Figure.Bones[_ikMid], Bone, targetPos,
-                    _profile.PoleDirection(_ik, Figure.Go.transform), ref _bendHint);
-                Bone.rotation = hand.rotation * _offsetRot;
+                SolveIk(hand.position + hand.rotation * _offsetPos, hand.rotation * _offsetRot);
                 return;
             }
 
@@ -218,6 +219,52 @@ namespace DazVrBridge
             twist = twist.x == 0f && twist.y == 0f && twist.z == 0f && twist.w == 0f ? Quaternion.identity : twist.normalized;
 
             Bone.rotation = twist * swing * _boneRot0;
+        }
+
+        // The limb solve.
+        //
+        // Without limits it is one analytic two-bone solve. With them, Daz's own joint
+        // ranges are enforced while dragging instead of only on commit, and the reach the
+        // limits refuse is handed to the clavicle, which is what a body actually does:
+        // the upper arm alone runs out of range long before the arm runs out of reach.
+        void SolveIk(Vector3 targetPos, Quaternion targetRot)
+        {
+            var root = Figure.Bones[_ikRoot];
+            var mid = Figure.Bones[_ikMid];
+            var shoulder = _ikShoulder >= 0 ? Figure.Bones[_ikShoulder] : null;
+            var pole = _profile.PoleDirection(_ik, Figure.Go.transform);
+            var clamping = ClampToLimits && Loader != null;
+
+            if (shoulder)
+            {
+                AimShoulder(targetPos);
+                if (clamping) DazEuler.ClampToLimits(Loader, Figure, _ikShoulder);
+            }
+
+            var iterations = clamping ? Mathf.Max(1, IkIterations) : 1;
+            for (var i = 0; i < iterations; i++)
+            {
+                TwoBoneIk.Solve(root, mid, Bone, targetPos, pole, ref _bendHint);
+                if (!clamping) break;
+
+                var moved = DazEuler.ClampToLimits(Loader, Figure, _ikRoot)
+                          + DazEuler.ClampToLimits(Loader, Figure, _ikMid);
+                if (moved <= 0.01f) break; // the solve was already legal: exact and done
+
+                // The clamps left the hand short of the target. Swing the clavicle to
+                // close the gap (a CCD step), within its own limits, and solve again.
+                if (shoulder && i < iterations - 1)
+                {
+                    var from = Bone.position - shoulder.position;
+                    var to = targetPos - shoulder.position;
+                    if (from.sqrMagnitude > 1e-8f && to.sqrMagnitude > 1e-8f)
+                        shoulder.rotation = Quaternion.FromToRotation(from, to) * shoulder.rotation;
+                    DazEuler.ClampToLimits(Loader, Figure, _ikShoulder);
+                }
+            }
+
+            Bone.rotation = targetRot;
+            if (clamping) DazEuler.ClampToLimits(Loader, Figure, BoneIndex);
         }
 
         // Rotates the clavicle a fraction of the way toward the target before the

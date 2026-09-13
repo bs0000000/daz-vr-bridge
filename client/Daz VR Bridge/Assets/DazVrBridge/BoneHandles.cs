@@ -17,6 +17,11 @@ namespace DazVrBridge
         public bool showHandles = true;
         [Tooltip("Hands and feet drag the whole limb (two-bone IK). Off: every handle is plain FK.")]
         public bool ikEnabled = true;
+        [Tooltip("Keep every joint inside its Daz limits while dragging, handing the refused reach to the clavicle. Off: the old free solve, with Daz correcting on commit.")]
+        public bool clampToLimits = true;
+        [Range(1, 8)]
+        [Tooltip("Passes of solve-then-clamp. More = closer to the target when limits bind.")]
+        public int ikIterations = 4;
 
         [Header("Visibility by controller distance")]
         [Tooltip("Handles farther than this from every controller are hidden.")]
@@ -121,6 +126,9 @@ namespace DazVrBridge
                     var go = new GameObject($"handle:{id}");
                     go.transform.SetParent(fig.Bones[i], false);
                     var h = go.AddComponent<BoneHandle>();
+                    h.Loader = loader;
+                    h.ClampToLimits = clampToLimits;
+                    h.IkIterations = ikIterations;
                     if (id == profile.Root) h.InitRing(fig, i, rootRingRadius, rootRingTube);
                     else h.Init(fig, i, handleRadius);
                     if (ikEnabled && profile.IkByEndBone.TryGetValue(id, out var chain) && h.SetIkChain(profile, chain)) ik++;
