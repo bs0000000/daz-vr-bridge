@@ -151,6 +151,20 @@ namespace DazVrBridge
             _frustum.SetPositions(pts);
         }
 
+        // Where a world point lands in this camera's frame: (0,0) bottom-left, (1,1) top-right,
+        // z = distance in front (negative = behind).
+        public Vector3 FramePoint(Vector3 world)
+        {
+            return _cam ? _cam.WorldToViewportPoint(world) : Vector3.zero;
+        }
+
+        public string Describe()
+        {
+            var f = transform.forward;
+            var pitch = Mathf.Asin(Mathf.Clamp(f.y, -1f, 1f)) * Mathf.Rad2Deg;
+            return $"pos={transform.position:F3} forward={f:F3} pitch={pitch:F1}° vFOV={VerticalFovDeg:F1}° aspect={Aspect:F3}";
+        }
+
         void LateUpdate()
         {
             // Keep the panel facing the viewer.

@@ -215,6 +215,18 @@ namespace DazVrBridge
                     var p = fig.Bones[i].position;
                     sb.Append($"  {id,-11} n={acc.n,5}  bone={p:F3}  centroid={c:F3}  |d|={(c - p).magnitude * 100f:F1} cm  dy={(c - p).y * 100f:F1} cm\n");
                 }
+                // Cameras: where this figure's head and eye land in each camera's frame.
+                foreach (var view in FindObjectsByType<CameraView>(FindObjectsSortMode.None))
+                {
+                    sb.Append($"  camera {view.name}: {view.Describe()}\n");
+                    foreach (var id in new[] { "head", "l_eye" })
+                    {
+                        if (!fig.ByName.TryGetValue(id, out var i)) continue;
+                        var p = view.FramePoint(fig.Bones[i].position);
+                        sb.Append($"    {id,-6} in frame: x={p.x:F2} y={p.y:F2} (0.5,0.5 = center)  depth={p.z:F2} m\n");
+                    }
+                }
+
                 Debug.Log(sb.ToString());
                 LastSelfTest = sb.ToString();
             }
