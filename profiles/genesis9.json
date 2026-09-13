@@ -11,6 +11,10 @@
     "l_arm": {
       "ik": true,
       "bones": ["l_upperarm", "l_forearm", "l_hand"],
+      "_shoulder_comment": "The clavicle carries a share of the reach before the two-bone solve. Without it the upper arm has to swing past its own limits and Daz corrects hard on commit. Its own limits are x[-30,30] y[-26,17] z[-10,55], hence the 30 deg cap.",
+      "shoulder": "l_shoulder",
+      "shoulder_weight": 0.4,
+      "shoulder_max_deg": 30,
       "hinge": { "l_forearm": "y" },
       "twist": {
         "l_upperarm": ["l_upperarmtwist1", "l_upperarmtwist2"],
@@ -21,6 +25,9 @@
     "r_arm": {
       "ik": true,
       "bones": ["r_upperarm", "r_forearm", "r_hand"],
+      "shoulder": "r_shoulder",
+      "shoulder_weight": 0.4,
+      "shoulder_max_deg": 30,
       "hinge": { "r_forearm": "y" },
       "twist": {
         "r_upperarm": ["r_upperarmtwist1", "r_upperarmtwist2"],

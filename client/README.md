@@ -70,8 +70,16 @@ under 10 cm (`BoneHandles` → Show/Full Distance). Three kinds, by color:
 your hand goes and the elbow and shoulder solve analytically to follow. The bend plane you
 posed is preserved, so the elbow stays where you put it; when the limb is straight (no
 plane to preserve) the profile's `pole` decides — elbows back, knees front. Out of reach,
-the limb straightens and points at your hand. The joint can never invert. Daz's joint
-limits are applied on commit, so the pose may settle slightly when you let go.
+the limb straightens and points at your hand. The joint can never invert.
+
+Arm chains also name a `shoulder` (the clavicle), which takes a fraction of the reach
+(`shoulder_weight`, capped by `shoulder_max_deg`) before the two-bone solve — reaching
+across the body or down to an armrest is shoulder-girdle motion in a real body, and
+without it the upper arm alone has to swing past its Daz limits, which Daz then corrects
+hard on commit.
+
+Daz's joint limits are still applied on commit and the answering `pose.state` snaps the
+pose, so it can settle a little when you let go; the client does not clamp during a drag yet.
 
 Controllers also draw through the body. Hover a handle (yellow), squeeze the
 **trigger** (green) and move your hand: the bone swings about its joint to keep pointing at

@@ -44,6 +44,9 @@ namespace DazVrBridge
         IkChain _ik;
         RigProfile _profile;
         int _ikRoot, _ikMid;
+        int _ikShoulder = -1;       // clavicle, when the chain has one
+        Quaternion _shoulderRot0;   // its rotation at grab time; the aim is re-applied to
+                                    // this each frame so the contribution cannot accumulate
         Vector3 _bendHint;
 
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
@@ -124,6 +127,7 @@ namespace DazVrBridge
         public bool SetIkChain(RigProfile profile, IkChain chain)
         {
             if (!figureHas(chain.Root, out _ikRoot) || !figureHas(chain.Mid, out _ikMid)) return false;
+            _ikShoulder = chain.Shoulder != null && figureHas(chain.Shoulder, out var s) ? s : -1;
             _profile = profile;
             _ik = chain;
             _idleColor = IkColor;
@@ -166,6 +170,7 @@ namespace DazVrBridge
             _offsetPos = Quaternion.Inverse(hand.rotation) * (Bone.position - hand.position);
             _offsetRot = Quaternion.Inverse(hand.rotation) * Bone.rotation;
             _bendHint = Vector3.zero; // the solver seeds it from the limb's current bend
+            if (_ikShoulder >= 0) _shoulderRot0 = Figure.Bones[_ikShoulder].rotation;
             SetState(State.Grabbed);
             if (!_poseSync) _poseSync = FindAnyObjectByType<PoseSync>();
             _poseSync?.SetGrabbed(Figure.Id, true);
@@ -183,8 +188,9 @@ namespace DazVrBridge
 
             if (_ik != null)
             {
-                // Carry the hand/foot; the two bones above solve to reach it.
+                // Carry the hand/foot; the limb above solves to reach it.
                 var targetPos = hand.position + hand.rotation * _offsetPos;
+                AimShoulder(targetPos);
                 TwoBoneIk.Solve(Figure.Bones[_ikRoot], Figure.Bones[_ikMid], Bone, targetPos,
                     _profile.PoleDirection(_ik, Figure.Go.transform), ref _bendHint);
                 Bone.rotation = hand.rotation * _offsetRot;
@@ -203,6 +209,27 @@ namespace DazVrBridge
             twist = twist.x == 0f && twist.y == 0f && twist.z == 0f && twist.w == 0f ? Quaternion.identity : twist.normalized;
 
             Bone.rotation = twist * swing * _boneRot0;
+        }
+
+        // Rotates the clavicle a fraction of the way toward the target before the
+        // two-bone solve: reaching across or down is shoulder-girdle motion in a real
+        // body, and without it the upper arm alone has to exceed its Daz limits.
+        void AimShoulder(Vector3 targetPos)
+        {
+            if (_ikShoulder < 0) return;
+            var sh = Figure.Bones[_ikShoulder];
+
+            sh.rotation = _shoulderRot0; // start from the grab-time pose, never from last frame
+            var from = Bone.position - sh.position;
+            var to = targetPos - sh.position;
+            if (from.sqrMagnitude < 1e-8f || to.sqrMagnitude < 1e-8f) return;
+
+            var partial = Quaternion.Slerp(Quaternion.identity, Quaternion.FromToRotation(from, to), _ik.ShoulderWeight);
+            partial.ToAngleAxis(out var angle, out var axis);
+            if (angle > 180f) { angle = 360f - angle; axis = -axis; }
+            if (angle > _ik.ShoulderMaxDeg) partial = Quaternion.AngleAxis(_ik.ShoulderMaxDeg, axis);
+
+            sh.rotation = partial * _shoulderRot0;
         }
 
         public void EndGrab(Transform hand)

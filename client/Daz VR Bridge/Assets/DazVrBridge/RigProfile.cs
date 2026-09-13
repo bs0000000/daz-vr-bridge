@@ -15,6 +15,13 @@ namespace DazVrBridge
         public string Name;
         public string Root, Mid, End;
         public string Pole;             // "back" (elbows) | "front" (knees) | null
+
+        // Optional shoulder girdle bone (the clavicle) that carries a share of the
+        // reach before the two-bone solve, so the upper arm does not have to swing
+        // past its own limits.
+        public string Shoulder;
+        public float ShoulderWeight = 0.4f;
+        public float ShoulderMaxDeg = 30f;
     }
 
     public sealed class RigProfile
@@ -90,7 +97,10 @@ namespace DazVrBridge
                         Mid = bones[1].Value<string>(),
                         End = bones[2].Value<string>(),
                         Pole = chain.Value<string>("pole"),
+                        Shoulder = chain.Value<string>("shoulder"),
                     };
+                    ik.ShoulderWeight = chain.Value<float?>("shoulder_weight") ?? ik.ShoulderWeight;
+                    ik.ShoulderMaxDeg = chain.Value<float?>("shoulder_max_deg") ?? ik.ShoulderMaxDeg;
                     p.IkByEndBone[ik.End] = ik;
                 }
             }
