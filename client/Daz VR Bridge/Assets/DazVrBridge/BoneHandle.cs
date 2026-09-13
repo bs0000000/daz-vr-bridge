@@ -1,6 +1,11 @@
 // A grab point on a bone. BoneHandles spawns one per grabbable bone; VrHand
 // finds them by overlap and drives the bone through them.
+//
+// Two shapes: a sphere at the middle of the bone segment (limbs, spine, head),
+// and a ring around the pivot for the root bone (hip), which sits outside the
+// body so it can be reached and is visually distinct from the pelvis sphere.
 
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace DazVrBridge
@@ -8,26 +13,29 @@ namespace DazVrBridge
     public sealed class BoneHandle : MonoBehaviour
     {
         public enum State { Idle, Hover, Grabbed }
+        public enum Kind { Sphere, Ring }
 
         public SceneLoader.LoadedFigure Figure;
         public int BoneIndex;
         public string BoneId;
+        public Kind Shape { get; private set; }
         public Transform Bone => Figure.Bones[BoneIndex];
 
         public State Current { get; private set; } = State.Idle;
 
         Renderer _renderer;
         float _alpha = 1f;
-        static readonly Color IdleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
+        float _ringRadius;
+        Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
+        static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
         static readonly Color HoverColor = new Color(1.0f, 0.85f, 0.2f, 1f);
         static readonly Color GrabbedColor = new Color(0.3f, 1.0f, 0.4f, 1f);
 
         public void Init(SceneLoader.LoadedFigure figure, int boneIndex, float radius)
         {
-            Figure = figure;
-            BoneIndex = boneIndex;
+            Shape = Kind.Sphere;
+            Setup(figure, boneIndex);
             var b = figure.BoneJson[boneIndex];
-            BoneId = b.Value<string>("id");
 
             // Sit at the middle of the bone segment, not at the joint: that is where a
             // hand reaches for a limb, and it gives the drag a lever arm. The segment
@@ -46,8 +54,60 @@ namespace DazVrBridge
             vis.transform.SetParent(transform, false);
             vis.transform.localScale = Vector3.one * radius * 2f; // primitive sphere scale is its diameter
             _renderer = vis.GetComponent<Renderer>();
-            _renderer.sharedMaterial = HandleMaterial();
+            _renderer.sharedMaterial = OverlayMaterial();
             SetState(State.Idle);
+        }
+
+        // Ring in the figure's horizontal plane around the bone pivot (root bone).
+        public void InitRing(SceneLoader.LoadedFigure figure, int boneIndex, float ringRadius, float tube)
+        {
+            Shape = Kind.Ring;
+            _ringRadius = ringRadius;
+            _idleColor = RootColor;
+            Setup(figure, boneIndex);
+
+            // The ring lies flat in figure space; undo the bone's own frame so its
+            // local Y is the figure's up.
+            var b = figure.BoneJson[boneIndex];
+            transform.localRotation = Quaternion.Inverse(DazSpace.Rot(b["orient"]));
+
+            // Grab zone: a necklace of trigger spheres along the ring.
+            const int colliders = 16;
+            for (var i = 0; i < colliders; i++)
+            {
+                var a = i * Mathf.PI * 2f / colliders;
+                var c = new GameObject($"col{i}");
+                c.transform.SetParent(transform, false);
+                c.transform.localPosition = new Vector3(Mathf.Cos(a) * ringRadius, 0f, Mathf.Sin(a) * ringRadius);
+                var sc = c.AddComponent<SphereCollider>();
+                sc.radius = tube * 2.5f;
+                sc.isTrigger = true;
+            }
+
+            var vis = new GameObject("vis");
+            vis.transform.SetParent(transform, false);
+            vis.AddComponent<MeshFilter>().sharedMesh = TorusMesh(ringRadius, tube);
+            _renderer = vis.AddComponent<MeshRenderer>();
+            _renderer.sharedMaterial = OverlayMaterial();
+            SetState(State.Idle);
+        }
+
+        void Setup(SceneLoader.LoadedFigure figure, int boneIndex)
+        {
+            Figure = figure;
+            BoneIndex = boneIndex;
+            BoneId = figure.BoneJson[boneIndex].Value<string>("id");
+        }
+
+        // Distance from a world point to the grabbable surface's center line:
+        // the sphere center, or the nearest point on the ring circle.
+        public float DistanceTo(Vector3 world)
+        {
+            if (Shape == Kind.Sphere) return Vector3.Distance(world, transform.position);
+            var l = transform.InverseTransformPoint(world);
+            var radial = Mathf.Sqrt(l.x * l.x + l.z * l.z) - _ringRadius;
+            var local = Mathf.Sqrt(radial * radial + l.y * l.y);
+            return local * transform.lossyScale.x;
         }
 
         public void SetState(State s)
@@ -66,7 +126,7 @@ namespace DazVrBridge
         void Apply()
         {
             if (!_renderer) return;
-            var c = Current == State.Grabbed ? GrabbedColor : Current == State.Hover ? HoverColor : IdleColor;
+            var c = Current == State.Grabbed ? GrabbedColor : Current == State.Hover ? HoverColor : _idleColor;
             var a = Current == State.Idle ? _alpha : 1f;
             _renderer.enabled = a > 0.01f;
             if (!_renderer.enabled) return;
@@ -77,16 +137,52 @@ namespace DazVrBridge
             _renderer.SetPropertyBlock(block);
         }
 
-        static Material _handleMaterial;
-        static Material HandleMaterial()
+        static Material _overlayMaterial;
+        // Unlit, alpha, drawn through everything. Shared by handles and controllers.
+        public static Material OverlayMaterial()
         {
-            if (_handleMaterial) return _handleMaterial;
-            // Overlay shader draws through the body; fall back to plain unlit if it is missing.
+            if (_overlayMaterial) return _overlayMaterial;
             var shader = Shader.Find("DazVrBridge/HandleOverlay")
                       ?? Shader.Find("Universal Render Pipeline/Unlit")
                       ?? Shader.Find("Unlit/Color");
-            _handleMaterial = new Material(shader) { name = "BoneHandle" };
-            return _handleMaterial;
+            _overlayMaterial = new Material(shader) { name = "BridgeOverlay" };
+            return _overlayMaterial;
+        }
+
+        static Mesh _torus;
+        static Mesh TorusMesh(float radius, float tube)
+        {
+            if (_torus) return _torus;
+            const int segs = 40, sides = 12;
+            var verts = new List<Vector3>();
+            var norms = new List<Vector3>();
+            var tris = new List<int>();
+            for (var i = 0; i <= segs; i++)
+            {
+                var a = i * Mathf.PI * 2f / segs;
+                var center = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                for (var j = 0; j <= sides; j++)
+                {
+                    var b = j * Mathf.PI * 2f / sides;
+                    var n = center * Mathf.Cos(b) + Vector3.up * Mathf.Sin(b);
+                    verts.Add(center * radius + n * tube);
+                    norms.Add(n);
+                }
+            }
+            for (var i = 0; i < segs; i++)
+                for (var j = 0; j < sides; j++)
+                {
+                    var a = i * (sides + 1) + j;
+                    var b = a + sides + 1;
+                    tris.Add(a); tris.Add(a + 1); tris.Add(b);
+                    tris.Add(b); tris.Add(a + 1); tris.Add(b + 1);
+                }
+            _torus = new Mesh { name = "HandleRing" };
+            _torus.SetVertices(verts);
+            _torus.SetNormals(norms);
+            _torus.SetTriangles(tris, 0);
+            _torus.RecalculateBounds();
+            return _torus;
         }
     }
 }

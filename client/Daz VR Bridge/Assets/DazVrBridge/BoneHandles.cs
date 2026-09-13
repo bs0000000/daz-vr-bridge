@@ -11,6 +11,9 @@ namespace DazVrBridge
         public SceneLoader loader;
         [Tooltip("Grab sphere radius in meters.")]
         public float handleRadius = 0.04f;
+        [Tooltip("Root bone (hip) handle: ring radius and tube thickness in meters.")]
+        public float rootRingRadius = 0.22f;
+        public float rootRingTube = 0.012f;
         public bool showHandles = true;
 
         [Header("Visibility by controller distance")]
@@ -46,8 +49,8 @@ namespace DazVrBridge
                 if (!h) continue;
                 if (hands == 0) { h.SetVisibility(alphaWithoutHands); continue; }
                 var d = float.MaxValue;
-                if (_rig.Left && _rig.Left.IsTracked) d = Mathf.Min(d, Vector3.Distance(l, h.transform.position));
-                if (_rig.Right && _rig.Right.IsTracked) d = Mathf.Min(d, Vector3.Distance(r, h.transform.position));
+                if (_rig.Left && _rig.Left.IsTracked) d = Mathf.Min(d, h.DistanceTo(l));
+                if (_rig.Right && _rig.Right.IsTracked) d = Mathf.Min(d, h.DistanceTo(r));
                 h.SetVisibility(1f - Mathf.InverseLerp(fullDistance, showDistance, d));
             }
         }
@@ -72,7 +75,8 @@ namespace DazVrBridge
                     var go = new GameObject($"handle:{id}");
                     go.transform.SetParent(fig.Bones[i], false);
                     var h = go.AddComponent<BoneHandle>();
-                    h.Init(fig, i, handleRadius);
+                    if (id == profile.Root) h.InitRing(fig, i, rootRingRadius, rootRingTube);
+                    else h.Init(fig, i, handleRadius);
                     go.transform.Find("vis").gameObject.SetActive(showHandles);
                     All.Add(h);
                     count++;

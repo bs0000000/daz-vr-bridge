@@ -49,12 +49,20 @@ namespace DazVrBridge
             var button = grabButton == GrabButton.Trigger ? "triggerPressed" : "gripPressed";
             _grab = new InputAction($"{hand}/grab", InputActionType.Button, $"<XRController>{{{hand}}}/{button}");
 
-            // A visible controller: a small elongated box, shown only while tracked.
+            // A visible controller: a small elongated box, shown only while tracked,
+            // drawn through the body (overlay) so it never vanishes inside a limb.
             _vis = GameObject.CreatePrimitive(PrimitiveType.Cube);
             _vis.name = "vis";
             Destroy(_vis.GetComponent<Collider>());
             _vis.transform.SetParent(transform, false);
             _vis.transform.localScale = new Vector3(0.03f, 0.03f, 0.10f);
+            var r = _vis.GetComponent<Renderer>();
+            r.sharedMaterial = BoneHandle.OverlayMaterial();
+            var block = new MaterialPropertyBlock();
+            var c = side == Side.Left ? new Color(0.85f, 0.9f, 1f, 0.9f) : new Color(1f, 0.9f, 0.85f, 0.9f);
+            block.SetColor("_BaseColor", c);
+            block.SetColor("_Color", c);
+            r.SetPropertyBlock(block);
             _vis.SetActive(false);
         }
 
@@ -107,9 +115,9 @@ namespace DazVrBridge
             var n = Physics.OverlapSphereNonAlloc(transform.position, grabRadius, _overlap, ~0, QueryTriggerInteraction.Collide);
             for (var i = 0; i < n; i++)
             {
-                var h = _overlap[i].GetComponent<BoneHandle>();
+                var h = _overlap[i].GetComponentInParent<BoneHandle>(); // ring colliders are children
                 if (!h || h.Current == BoneHandle.State.Grabbed) continue;
-                var d = Vector3.Distance(transform.position, h.transform.position);
+                var d = h.DistanceTo(transform.position);
                 if (d < bestDist) { bestDist = d; best = h; }
             }
             if (best != _hover)
