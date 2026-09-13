@@ -87,9 +87,10 @@ hard on commit.
   to close the gap, solve again (Ik Iterations, default 4). It stops the moment a solve
   comes back legal, so poses inside the limits behave exactly as before. What you see is
   what Daz will keep. Turn it off for the old free solve.
-- **Show Limits** (default on) turns a handle **red** when a bone it drives is still past a
-  limit — deeper the further past — and lists them on the HUD worst first,
-  `l_upperarm y 52° outside [-110, 40]`.
+- **Show Limits** (default on) turns a handle **red** when a bone it drives is *at* its
+  limit — which, with clamping on, is what "the hand stopped following my controller"
+  actually means — and lists them on the HUD, `l_upperarm y 40° at [-110, 40]`. With
+  clamping off the same display reads `past` instead, flagging what Daz will correct.
 
 Arm chains also set `roll_assist`: the wrist alone can only twist `z[-70, 80]`, so the
 solver rolls the forearm about the elbow-to-wrist axis (which moves no joint, leaving the

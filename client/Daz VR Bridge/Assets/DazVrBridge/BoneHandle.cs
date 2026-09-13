@@ -56,6 +56,7 @@ namespace DazVrBridge
         // Set by BoneHandles.
         public SceneLoader Loader;
         public bool ClampToLimits = true;
+        public bool RollAssist = true;
         public int IkIterations = 4;
 
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
@@ -268,7 +269,7 @@ namespace DazVrBridge
             // The wrist alone cannot twist far (Daz gives l_hand z +/-70..80); in a real
             // arm most of that twist is forearm pronation. Rolling the forearm about the
             // elbow-to-wrist axis moves no joint position, so the solve above still holds.
-            if (clamping && _ik.RollAssist) RollMidBone(targetRot);
+            if (clamping && RollAssist && _ik.RollAssist) RollMidBone(targetRot);
 
             if (clamping)
             {
@@ -353,11 +354,11 @@ namespace DazVrBridge
             Apply();
         }
 
-        // Degrees past a Daz joint limit on the worst bone this handle drives.
-        public void SetOverLimit(float degrees)
+        // 0..1: how pinned against a Daz joint limit the worst bone this handle drives is.
+        public void SetOverLimit(float pinned)
         {
-            if (Mathf.Approximately(_overLimit, degrees)) return;
-            _overLimit = degrees;
+            if (Mathf.Approximately(_overLimit, pinned)) return;
+            _overLimit = pinned;
             Apply();
         }
 
@@ -365,8 +366,9 @@ namespace DazVrBridge
         {
             if (!_renderer) return;
             var c = Current == State.Grabbed ? GrabbedColor : Current == State.Hover ? HoverColor : _idleColor;
-            // Past a joint limit: Daz will pull this pose back on commit, so say so now.
-            if (_overLimit > 0.5f) c = Color.Lerp(c, OverLimitColor, Mathf.Clamp01(0.45f + _overLimit / 40f));
+            // At a joint limit: this bone has run out of range and is why the limb stopped
+            // following. (Without clamping it is also past the limit and Daz will correct it.)
+            if (_overLimit > 0f) c = Color.Lerp(c, OverLimitColor, 0.35f + 0.5f * Mathf.Clamp01(_overLimit));
             var a = Current == State.Idle ? _alpha : 1f;
             _renderer.enabled = a > 0.01f;
             if (!_renderer.enabled) return;

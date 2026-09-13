@@ -31,8 +31,11 @@ namespace DazVrBridge
         [Tooltip("Opacity when no controller is tracked (desktop testing).")]
         [Range(0f, 1f)] public float alphaWithoutHands = 0.35f;
 
+        [Tooltip("Let arm chains roll the forearm to recover wrist twist (profile: roll_assist).")]
+        public bool rollAssist = true;
+
         [Header("Joint limits")]
-        [Tooltip("Turn a handle red when a bone it drives is past a Daz joint limit, and list them on the HUD.")]
+        [Tooltip("Turn a handle red when a bone it drives is at or past a Daz joint limit, and list them on the HUD.")]
         public bool showLimits = true;
 
         public readonly List<BoneHandle> All = new List<BoneHandle>();
@@ -81,20 +84,24 @@ namespace DazVrBridge
             foreach (var h in All)
             {
                 if (!h || h.ControlledBones == null) continue;
-                var worst = 0f;
+                var pinned = 0f;
                 foreach (var bone in h.ControlledBones)
                 {
                     var status = DazEuler.Check(loader, h.Figure, bone);
-                    if (!status.Valid || status.Worst <= 0.5f) continue;
-                    if (status.Worst > worst) worst = status.Worst;
+                    if (!status.Valid) continue;
+                    var p = status.Pinned();
+                    if (p <= 0f) continue;
+                    if (p > pinned) pinned = p;
+
                     var axis = status.WorstAxis;
                     var value = axis == "x" ? status.Euler.x : axis == "y" ? status.Euler.y : status.Euler.z;
                     var min = axis == "x" ? h.Figure.LimitMin[bone].x : axis == "y" ? h.Figure.LimitMin[bone].y : h.Figure.LimitMin[bone].z;
                     var max = axis == "x" ? h.Figure.LimitMax[bone].x : axis == "y" ? h.Figure.LimitMax[bone].y : h.Figure.LimitMax[bone].z;
                     var id = h.Figure.BoneJson[bone].Value<string>("id");
-                    _violations.Add(($"{id} {axis} {value:F0}° outside [{min:F0}, {max:F0}]", status.Worst));
+                    var word = status.Worst > 0.5f ? "past" : "at";
+                    _violations.Add(($"{id} {axis} {value:F0}° {word} [{min:F0}, {max:F0}]", p + status.Worst));
                 }
-                h.SetOverLimit(worst);
+                h.SetOverLimit(pinned);
             }
 
             if (_violations.Count == 0) { LimitText = ""; return; }
@@ -102,7 +109,7 @@ namespace DazVrBridge
             var lines = new List<string>();
             for (var i = 0; i < _violations.Count && i < 4; i++) lines.Add(_violations[i].text);
             if (_violations.Count > 4) lines.Add($"+{_violations.Count - 4} more");
-            LimitText = "past Daz limits:\n" + string.Join("\n", lines);
+            LimitText = "at Daz limits:\n" + string.Join("\n", lines);
         }
 
         void OnDestroy()
@@ -129,6 +136,7 @@ namespace DazVrBridge
                     h.Loader = loader;
                     h.ClampToLimits = clampToLimits;
                     h.IkIterations = ikIterations;
+                    h.RollAssist = rollAssist;
                     if (id == profile.Root) h.InitRing(fig, i, rootRingRadius, rootRingTube);
                     else h.Init(fig, i, handleRadius);
                     if (ikEnabled && profile.IkByEndBone.TryGetValue(id, out var chain) && h.SetIkChain(profile, chain)) ik++;

@@ -19,17 +19,28 @@ namespace DazVrBridge
     public struct LimitStatus
     {
         public Vector3 Euler;   // Daz's X/Y/Z rotation values, degrees
-        public Vector3 Over;    // how far past the limit each axis is, degrees (0 = inside)
+        public Vector3 Over;    // how far past its limit each axis is, degrees (0 = inside)
+        public Vector3 Slack;   // degrees to the nearest limit; <= 0 means at or past it
         public bool Valid;
 
         public float Worst => Mathf.Max(Over.x, Mathf.Max(Over.y, Over.z));
+
+        // How pinned the tightest axis is: 1 when it is at (or past) its limit, falling to
+        // 0 by `window` degrees away. With clamping on, a joint that has run out of range
+        // sits exactly at its limit rather than beyond it, so this is the signal worth
+        // showing — "this joint is why the hand stopped following you".
+        public float Pinned(float window = 2f)
+        {
+            var slack = Mathf.Min(Slack.x, Mathf.Min(Slack.y, Slack.z));
+            return Mathf.Clamp01(1f - slack / Mathf.Max(0.01f, window));
+        }
 
         public string WorstAxis
         {
             get
             {
-                if (Over.x >= Over.y && Over.x >= Over.z) return "x";
-                return Over.y >= Over.z ? "y" : "z";
+                if (Slack.x <= Slack.y && Slack.x <= Slack.z) return "x";
+                return Slack.y <= Slack.z ? "y" : "z";
             }
         }
     }
@@ -62,6 +73,10 @@ namespace DazVrBridge
                 Overshoot(status.Euler.x, min.x, max.x),
                 Overshoot(status.Euler.y, min.y, max.y),
                 Overshoot(status.Euler.z, min.z, max.z));
+            status.Slack = new Vector3(
+                Mathf.Min(status.Euler.x - min.x, max.x - status.Euler.x),
+                Mathf.Min(status.Euler.y - min.y, max.y - status.Euler.y),
+                Mathf.Min(status.Euler.z - min.z, max.z - status.Euler.z));
             return status;
         }
 
