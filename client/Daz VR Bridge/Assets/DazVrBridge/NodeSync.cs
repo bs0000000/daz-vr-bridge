@@ -34,7 +34,7 @@ namespace DazVrBridge
             var id = f.Header.Value<string>("node");
             if (_grabbed.Contains(id)) return;
             if (!loader.Nodes.TryGetValue(id, out var node)) return;
-            loader.ApplyNodeState(node, (JObject)f.Header["transform"], f.Header.Value<double?>("focal_mm"));
+            loader.ApplyNodeState(node, f.Header);
         }
 
         public void Commit(SceneLoader.LoadedNode node, string label)

@@ -252,7 +252,7 @@ namespace DazVrBridge
                 else if (type == "camera")
                 {
                     var view = go.AddComponent<CameraView>();
-                    view.Init(n.Value<float?>("focal_mm") ?? 65f, n.Value<float?>("frame_width_mm") ?? 36f, n.Value<float?>("aspect") ?? 1.777f);
+                    view.Init(n.Value<float?>("focal_mm") ?? 65f, n.Value<float?>("frame_width_mm") ?? 36f, n.Value<float?>("aspect") ?? 1.777f, n.Value<float?>("fov"));
                     go.AddComponent<NodeHandle>().Init(Nodes[id], go.transform.Find("body").GetComponent<Collider>());
                 }
                 else if (type == "light")
@@ -365,17 +365,17 @@ namespace DazVrBridge
         }
 
         // node.state -> place a node from its Daz world transform (and lens for cameras).
-        public void ApplyNodeState(LoadedNode node, JObject transform, double? focalMm)
+        public void ApplyNodeState(LoadedNode node, JObject header)
         {
+            var transform = (JObject)header["transform"];
             var root = _root.transform;
             node.Go.transform.position = root.TransformPoint(DazSpace.Pos(transform["pos"]));
             node.Go.transform.rotation = root.rotation * DazSpace.RotFromDazWorld(transform["rot"]);
             if (node.Go.transform.parent == root) node.Go.transform.localScale = DazSpace.Scale(transform["scale"]);
-            if (focalMm.HasValue)
-            {
-                var view = node.Go.GetComponent<CameraView>();
-                if (view) view.SetFocal((float)focalMm.Value);
-            }
+
+            var view = node.Go.GetComponent<CameraView>();
+            if (view && header["focal_mm"] != null)
+                view.SetLens(header.Value<float>("focal_mm"), header.Value<float?>("frame_width_mm"), header.Value<float?>("aspect"), header.Value<float?>("fov"));
         }
 
         // A node's current world transform as Daz world pos (cm) and rot (Daz sense).

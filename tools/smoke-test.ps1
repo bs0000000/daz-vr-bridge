@@ -100,6 +100,11 @@ foreach ($fig in $figures) {
     Write-Host "   mesh: $($fig.vertices) verts, $($fig.triangles) tris"
 }
 
+foreach ($cam in @($m.nodes | Where-Object { $_.type -eq "camera" })) {
+    $nomH = 2 * [math]::Atan($cam.frame_width_mm / (2 * $cam.focal_mm)) * 180 / [math]::PI
+    Write-Host ("camera '{0}': focal={1} mm  frame_w={2} mm  aspect={3:F3}  Daz getFieldOfView()={4}  (nominal 2*atan(frame/2f) = {5:F2} deg)" -f $cam.label, $cam.focal_mm, $cam.frame_width_mm, $cam.aspect, $cam.fov, $nomH)
+}
+
 # --- assets over a bulk connection
 $assets = @($m.assets)
 Write-Host ""

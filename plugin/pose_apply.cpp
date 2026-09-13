@@ -247,9 +247,12 @@ QJsonObject nodeStateFor( DzNode* node )
 	QJsonObject s;
 	s[ "node" ] = nodeIdOf( node );
 	s[ "transform" ] = t;
-	if ( const DzCamera* camera = qobject_cast<const DzCamera*>( node ) )
+	if ( DzCamera* camera = qobject_cast<DzCamera*>( node ) )
 	{
 		s[ "focal_mm" ] = camera->getFocalLength();
+		s[ "frame_width_mm" ] = camera->getFrameWidth();
+		s[ "aspect" ] = camera->getAspectRatio();
+		s[ "fov" ] = camera->getFieldOfView();
 	}
 	return s;
 }
@@ -362,6 +365,15 @@ void PoseWatcher::rescan()
 		m_watched.insert( node );
 		connect( node, &DzNode::transformChanged, this, [this, node]() { onNodeTransformChanged( node ); } );
 		connect( node, &QObject::destroyed, this, [this, node]() { m_watched.remove( node ); m_dirtyNodes.remove( node ); } );
+
+		// Lens changes are not transform changes; cameras have their own signals.
+		if ( DzCamera* camera = qobject_cast<DzCamera*>( node ) )
+		{
+			connect( camera, &DzCamera::focalLengthChanged, this, [this, node]( const DzTimeRange & ) { onNodeTransformChanged( node ); } );
+			connect( camera, &DzCamera::frameWidthChanged, this, [this, node]( float ) { onNodeTransformChanged( node ); } );
+			connect( camera, &DzCamera::aspectRatioChanged, this, [this, node]() { onNodeTransformChanged( node ); } );
+			connect( camera, &DzCamera::projectionChanged, this, [this, node]() { onNodeTransformChanged( node ); } );
+		}
 	}
 
 	const int count = dzScene->getNumSkeletons();

@@ -13,6 +13,9 @@ namespace DazVrBridge
         public float FocalMm { get; private set; } = 65f;
         public float FrameWidthMm { get; private set; } = 36f;
         public float Aspect { get; private set; } = 16f / 9f;
+        // Vertical field of view in degrees. From Daz's getFieldOfView() when present
+        // (auto-detecting radians), else the nominal 2*atan(frame/(2*focal)).
+        public float VerticalFovDeg { get; private set; } = 30f;
 
         public float pipWidth = 0.40f;      // meters
         public float pipHeightAbove = 0.30f;
@@ -23,11 +26,12 @@ namespace DazVrBridge
         Transform _pip;
         LineRenderer _frustum;
 
-        public void Init(float focalMm, float frameWidthMm, float aspect)
+        public void Init(float focalMm, float frameWidthMm, float aspect, float? dazFov)
         {
             FocalMm = focalMm > 0 ? focalMm : 65f;
             FrameWidthMm = frameWidthMm > 0 ? frameWidthMm : 36f;
             Aspect = aspect > 0 ? aspect : 16f / 9f;
+            VerticalFovDeg = ResolveFov(dazFov);
 
             // Body: a box the size of a small camera, the grab target.
             var body = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -76,26 +80,55 @@ namespace DazVrBridge
             quad.GetComponent<Renderer>().sharedMaterial = mat;
         }
 
-        public void SetFocal(float focalMm)
+        public void SetLens(float focalMm, float? frameWidthMm, float? aspect, float? dazFov)
         {
-            FocalMm = focalMm;
+            if (focalMm > 0) FocalMm = focalMm;
+            if (frameWidthMm.HasValue && frameWidthMm > 0) FrameWidthMm = frameWidthMm.Value;
+            if (aspect.HasValue && aspect > 0)
+            {
+                var changed = !Mathf.Approximately(Aspect, aspect.Value);
+                Aspect = aspect.Value;
+                if (changed) RebuildTarget();
+            }
+            VerticalFovDeg = ResolveFov(dazFov);
             ApplyLens();
             BuildFrustum();
+        }
+
+        float ResolveFov(float? dazFov)
+        {
+            if (dazFov.HasValue && dazFov.Value > 0f)
+            {
+                var v = dazFov.Value;
+                return v < 3.2f ? v * Mathf.Rad2Deg : v; // radians if it cannot be degrees
+            }
+            return 2f * Mathf.Atan(FrameWidthMm * 0.5f / FocalMm) * Mathf.Rad2Deg;
         }
 
         void ApplyLens()
         {
             if (!_cam) return;
-            _cam.usePhysicalProperties = true;
-            _cam.focalLength = FocalMm;
-            _cam.sensorSize = new Vector2(FrameWidthMm, FrameWidthMm / Aspect);
-            _cam.gateFit = Camera.GateFitMode.Horizontal;
+            _cam.usePhysicalProperties = false;
+            _cam.fieldOfView = VerticalFovDeg;
+        }
+
+        void RebuildTarget()
+        {
+            if (!_cam || !_rt) return;
+            _rt.Release();
+            _rt = new RenderTexture(pipPixels, Mathf.Max(1, Mathf.RoundToInt(pipPixels / Aspect)), 24) { name = "pip" };
+            _cam.targetTexture = _rt;
+            if (_pip)
+            {
+                _pip.localScale = new Vector3(pipWidth, pipWidth / Aspect, 1f);
+                _pip.GetComponent<Renderer>().sharedMaterial.mainTexture = _rt;
+            }
         }
 
         void BuildFrustum()
         {
-            var halfW = FrameWidthMm * 0.5f / FocalMm; // tan(hfov/2)
-            var halfH = halfW / Aspect;
+            var halfH = Mathf.Tan(VerticalFovDeg * 0.5f * Mathf.Deg2Rad);
+            var halfW = halfH * Aspect;
             const float near = 0.15f, far = 1.5f;
             Vector3 P(float d, float sx, float sy) => new Vector3(sx * d * halfW, sy * d * halfH, d);
             var pts = new[]
