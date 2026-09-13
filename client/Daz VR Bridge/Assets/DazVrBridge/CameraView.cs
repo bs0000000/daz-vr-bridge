@@ -6,6 +6,7 @@
 
 using Newtonsoft.Json.Linq;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 namespace DazVrBridge
 {
@@ -66,7 +67,10 @@ namespace DazVrBridge
             camGo.transform.SetParent(transform, false);
             _cam = camGo.AddComponent<Camera>();
             _cam.targetTexture = _rt;
-            _cam.stereoTargetEye = StereoTargetEyeMask.None;
+            // URP has no stereoTargetEye; XR rendering is switched off per camera on its
+            // URP data, so this renders one flat image while OpenXR drives the main camera.
+            var urp = _cam.GetUniversalAdditionalCameraData();
+            if (urp) urp.allowXRRendering = false;
             _cam.nearClipPlane = 0.05f;
             _cam.farClipPlane = 200f;
             _cam.depth = -10;
