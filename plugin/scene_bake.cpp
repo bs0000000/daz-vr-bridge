@@ -26,6 +26,7 @@
 
 #include "bridge_protocol.h"
 #include "mesh_bake.h"
+#include "pose_apply.h"
 
 namespace DazVrBridge {
 
@@ -195,13 +196,7 @@ QJsonObject jsonNode( const DzNode* node, const QString &type, QStringList &bone
 	else if ( type == "camera" || type == "light" )
 	{
 		DzCamera* cam = const_cast<DzCamera*>( static_cast<const DzCamera*>( node ) );
-		n[ "focal_mm" ] = cam->getFocalLength();
-		n[ "frame_width_mm" ] = cam->getFrameWidth();
-		n[ "aspect" ] = cam->getAspectRatio();
-		// Daz's own field of view (getFieldOfView is a slot, hence the cast).
-		// Units/axis are undocumented; the client treats it as the vertical FOV
-		// and auto-detects radians vs degrees. See PROTOCOL.md.
-		n[ "fov" ] = cam->getFieldOfView();
+		writeCameraLens( n, cam );
 
 		if ( type == "light" )
 		{

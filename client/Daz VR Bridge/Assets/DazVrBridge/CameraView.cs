@@ -13,8 +13,11 @@ namespace DazVrBridge
         public float FocalMm { get; private set; } = 65f;
         public float FrameWidthMm { get; private set; } = 36f;
         public float Aspect { get; private set; } = 16f / 9f;
-        // Vertical field of view in degrees. From Daz's getFieldOfView() when present
-        // (auto-detecting radians), else the nominal 2*atan(frame/(2*focal)).
+        // Daz's getFieldOfView() is 2*atan(frame_width/(2*focal)) in radians, independent
+        // of the render aspect. Daz mimics a 36 mm film width, so that angle is taken as
+        // the HORIZONTAL field of view and the vertical one follows from the aspect.
+        // Flip this if a Daz render shows more/less vertically than the panel.
+        public bool fovIsHorizontal = true;
         public float VerticalFovDeg { get; private set; } = 30f;
 
         public float pipWidth = 0.40f;      // meters
@@ -90,19 +93,26 @@ namespace DazVrBridge
                 Aspect = aspect.Value;
                 if (changed) RebuildTarget();
             }
-            VerticalFovDeg = ResolveFov(dazFov);
+            VerticalFovDeg = ResolveFov(dazFov); // after Aspect: the conversion depends on it
             ApplyLens();
             BuildFrustum();
         }
 
         float ResolveFov(float? dazFov)
         {
+            float deg;
             if (dazFov.HasValue && dazFov.Value > 0f)
             {
                 var v = dazFov.Value;
-                return v < 3.2f ? v * Mathf.Rad2Deg : v; // radians if it cannot be degrees
+                deg = v < 3.2f ? v * Mathf.Rad2Deg : v; // radians if it cannot be degrees
             }
-            return 2f * Mathf.Atan(FrameWidthMm * 0.5f / FocalMm) * Mathf.Rad2Deg;
+            else
+            {
+                deg = 2f * Mathf.Atan(FrameWidthMm * 0.5f / FocalMm) * Mathf.Rad2Deg;
+            }
+            if (!fovIsHorizontal) return deg;
+            // horizontal -> vertical through the render aspect
+            return 2f * Mathf.Atan(Mathf.Tan(deg * 0.5f * Mathf.Deg2Rad) / Aspect) * Mathf.Rad2Deg;
         }
 
         void ApplyLens()

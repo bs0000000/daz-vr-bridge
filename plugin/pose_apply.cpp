@@ -7,11 +7,14 @@
 #include <QStringBuilder>
 #include <QTimer>
 
+#include "dzapp.h"
 #include "dzbone.h"
 #include "dzcamera.h"
 #include "dzfloatproperty.h"
 #include "dzmatrix3.h"
 #include "dznode.h"
+#include "dzrendermgr.h"
+#include "dzrenderoptions.h"
 #include "dzquat.h"
 #include "dzscene.h"
 #include "dzskeleton.h"
@@ -249,12 +252,32 @@ QJsonObject nodeStateFor( DzNode* node )
 	s[ "transform" ] = t;
 	if ( DzCamera* camera = qobject_cast<DzCamera*>( node ) )
 	{
-		s[ "focal_mm" ] = camera->getFocalLength();
-		s[ "frame_width_mm" ] = camera->getFrameWidth();
-		s[ "aspect" ] = camera->getAspectRatio();
-		s[ "fov" ] = camera->getFieldOfView();
+		writeCameraLens( s, camera );
 	}
 	return s;
+}
+
+void writeCameraLens( QJsonObject &into, DzCamera* camera )
+{
+	into[ "focal_mm" ] = camera->getFocalLength();
+	into[ "frame_width_mm" ] = camera->getFrameWidth();
+	into[ "fov" ] = camera->getFieldOfView();
+
+	double aspect = camera->getAspectRatio();
+	QJsonArray px{ camera->getPixelsWidth(), camera->getPixelsHeight() };
+	if ( !camera->getUseLocalDimensions() )
+	{
+		const DzRenderMgr* mgr = dzApp->getRenderMgr();
+		const DzRenderOptions* opts = mgr ? mgr->getRenderOptions() : nullptr;
+		if ( opts )
+		{
+			aspect = opts->getAspect();
+			const QSize size = opts->getImageSize();
+			px = QJsonArray{ size.width(), size.height() };
+		}
+	}
+	into[ "aspect" ] = aspect;
+	into[ "render_px" ] = px;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -349,6 +372,24 @@ PoseWatcher::PoseWatcher( QObject* parent ) :
 	connect( dzScene, &DzScene::sceneCleared, this, &PoseWatcher::rescan );
 	connect( dzScene, &DzScene::skeletonListChanged, this, &PoseWatcher::rescan );
 	connect( dzScene, &DzScene::nodeListChanged, this, &PoseWatcher::rescan );
+
+	// Render size/aspect is global; every camera not using local dimensions changes with it.
+	if ( DzRenderMgr* mgr = dzApp->getRenderMgr() )
+	{
+		if ( DzRenderOptions* opts = mgr->getRenderOptions() )
+		{
+			auto allCameras = [this]()
+			{
+				const int n = dzScene->getNumCameras();
+				for ( int i = 0; i < n; ++i )
+				{
+					if ( DzNode* cam = dzScene->getCamera( i ) ) onNodeTransformChanged( cam );
+				}
+			};
+			connect( opts, &DzRenderOptions::aspectChanged, this, [allCameras]( double ) { allCameras(); } );
+			connect( opts, &DzRenderOptions::imageSizeChanged, this, [allCameras]( const DsSize & ) { allCameras(); } );
+		}
+	}
 }
 
 void PoseWatcher::rescan()

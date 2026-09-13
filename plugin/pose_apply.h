@@ -17,6 +17,7 @@
 #include <QString>
 #include <QVector>
 
+class DzCamera;
 class DzNode;
 class DzSkeleton;
 class QTimer;
@@ -46,8 +47,13 @@ CommitResult	applyPoseCommit( const QJsonObject &header, const QString &undoCapt
 // Empty undoCaption = no undo entry (preview).
 CommitResult	applyNodeTransform( const QJsonObject &header, const QString &undoCaption );
 
-// node.state payload: { node, transform: { pos, rot, scale } } (+ focal_mm for cameras)
+// node.state payload: { node, transform: { pos, rot, scale } } (+ lens for cameras)
 QJsonObject	nodeStateFor( DzNode* node );
+
+// Lens fields for a camera: focal_mm, frame_width_mm, fov (Daz's, radians,
+// frame-width formula), aspect and render_px — the render's when the camera
+// does not use local dimensions, which is the usual case.
+void	writeCameraLens( QJsonObject &into, DzCamera* camera );
 
 // Self-test bookkeeping: Euler snapshot of a figure, compared after the echo.
 struct EulerSnapshot

@@ -88,9 +88,10 @@ nodes:  [ {
       limits_deg: { x:[min,max], y:[…], z:[…] }, clamped: bool
       rot_deg: [x, y, z]  — current local Euler values in rot_order
   } ] }
-  camera/light: focal_mm, frame_width_mm, aspect, fov (Daz's own getFieldOfView(); the client
-                treats it as the VERTICAL field of view and auto-detects radians vs degrees);
-                light also kind (spot|point|distant), intensity
+  camera/light: focal_mm, frame_width_mm, fov (Daz's getFieldOfView() = 2·atan(frame/(2·focal)),
+                RADIANS, independent of aspect — the client applies it as the horizontal FOV),
+                aspect + render_px [w, h] (the render settings' unless the camera uses local
+                dimensions); light also kind (spot|point|distant), intensity
 } ]
 ```
 
