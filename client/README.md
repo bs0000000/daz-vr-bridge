@@ -55,10 +55,13 @@ No XR Interaction Toolkit rig needed. Two components:
   grabbable bone from the figure's rig profile (`Resources/RigProfiles/<rig>.json`, kept
   in sync with `/profiles`).
 
-Hover a handle (yellow), squeeze **grip** (green) and turn your hand: the bone rotates
-about its own origin, children follow. Let go and the figure is committed to Daz as one
-undo step named after the bone; Daz's answering `pose.state` snaps anything its limits
-clamped. Face, twist and finger bones have no handles by design.
+Handles sit at the middle of each bone segment. Hover one (yellow), squeeze the
+**trigger** (green) and move your hand: the bone swings about its joint to keep pointing at
+your hand, so dragging the forearm drags the forearm; roll the controller to twist the
+bone about its axis. Children follow as a chain (this is FK — placing a hand somewhere
+with the elbow solving itself is IK, Phase 4). Let go and the figure is committed to Daz
+as one undo step named after the bone; Daz's answering `pose.state` snaps anything its
+joint limits clamped. Face, twist and finger bones have no handles by design.
 
 Keep `Bridge` (BridgeSession, SceneLoader, PoseSync, BoneHandles) as a plain object at
 the scene root rather than under the Canvas — the Canvas is scaled 0.001 and `DazScene`

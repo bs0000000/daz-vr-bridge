@@ -25,7 +25,15 @@ namespace DazVrBridge
         {
             Figure = figure;
             BoneIndex = boneIndex;
-            BoneId = figure.BoneJson[boneIndex].Value<string>("id");
+            var b = figure.BoneJson[boneIndex];
+            BoneId = b.Value<string>("id");
+
+            // Sit at the middle of the bone segment, not at the joint: that is where a
+            // hand reaches for a limb, and it gives the drag a lever arm. The segment
+            // (origin -> end) is figure-space; express it in the bone's own frame.
+            var seg = DazSpace.Pos(b["end"]) - DazSpace.Pos(b["origin"]);
+            var local = Quaternion.Inverse(DazSpace.Rot(b["orient"])) * seg;
+            transform.localPosition = local * 0.5f;
 
             var col = gameObject.AddComponent<SphereCollider>();
             col.radius = radius;

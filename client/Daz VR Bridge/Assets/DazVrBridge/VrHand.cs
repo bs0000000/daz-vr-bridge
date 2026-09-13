@@ -2,9 +2,11 @@
 // pose and buttons come straight from the Input System's XRController layout,
 // which OpenXR provides once an interaction profile is enabled.
 //
-// Grab model (FK): while holding the grab button near a handle, the bone's
-// world rotation follows the controller's rotation, pivoting at the bone
-// origin. Release commits the figure to Daz as one undo step.
+// Grab model (FK, aim-based): while holding the grab button on a handle, the
+// bone swings about its origin so that the segment keeps pointing at the
+// controller (drag the forearm and it follows your hand), and rolling the
+// controller twists the bone about its own axis. Children follow as a chain.
+// Release commits the figure to Daz as one undo step.
 
 using System.Text;
 using UnityEngine;
@@ -32,7 +34,9 @@ namespace DazVrBridge
 
         BoneHandle _hover;
         BoneHandle _grabbed;
-        Quaternion _grabOffset; // bone.rotation = controller.rotation * offset
+        Vector3 _dir0;          // bone origin -> controller at grab time (world)
+        Quaternion _boneRot0;   // bone world rotation at grab time
+        Quaternion _ctrlRot0;   // controller world rotation at grab time
 
         readonly Collider[] _overlap = new Collider[32];
 
@@ -86,7 +90,7 @@ namespace DazVrBridge
 
             if (_grabbed)
             {
-                _grabbed.Bone.rotation = transform.rotation * _grabOffset;
+                Drag();
                 if (!_grab.IsPressed() || !IsTracked) Release();
                 return;
             }
@@ -126,9 +130,30 @@ namespace DazVrBridge
         {
             _grabbed = h;
             _hover = null;
-            _grabOffset = Quaternion.Inverse(transform.rotation) * h.Bone.rotation;
+            _dir0 = transform.position - h.Bone.position;
+            _boneRot0 = h.Bone.rotation;
+            _ctrlRot0 = transform.rotation;
             h.SetState(BoneHandle.State.Grabbed);
             poseSync?.SetGrabbed(h.Figure.Id, true);
+        }
+
+        void Drag()
+        {
+            var bone = _grabbed.Bone;
+            var dir = transform.position - bone.position;
+            if (_dir0.sqrMagnitude < 1e-6f || dir.sqrMagnitude < 1e-6f) return;
+
+            // Swing: the rotation that carries the grab-time direction onto the current one.
+            var swing = Quaternion.FromToRotation(_dir0, dir);
+
+            // Twist: how much the controller has rolled about the current bone-to-hand axis.
+            var delta = transform.rotation * Quaternion.Inverse(_ctrlRot0);
+            var axis = dir.normalized;
+            var proj = Vector3.Dot(new Vector3(delta.x, delta.y, delta.z), axis) * axis;
+            var twist = new Quaternion(proj.x, proj.y, proj.z, delta.w);
+            twist = twist.x == 0f && twist.y == 0f && twist.z == 0f && twist.w == 0f ? Quaternion.identity : twist.normalized;
+
+            bone.rotation = twist * swing * _boneRot0;
         }
 
         void Release()

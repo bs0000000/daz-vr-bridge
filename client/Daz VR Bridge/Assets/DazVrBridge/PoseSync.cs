@@ -181,7 +181,10 @@ namespace DazVrBridge
         {
             foreach (var fig in loader.Figures.Values)
             {
-                var smr = fig.Go.GetComponentInChildren<SkinnedMeshRenderer>();
+                // The body: followers (eyes, lashes) are also under the figure; take the biggest.
+                SkinnedMeshRenderer smr = null;
+                foreach (var s in fig.Go.GetComponentsInChildren<SkinnedMeshRenderer>())
+                    if (!smr || s.sharedMesh.vertexCount > smr.sharedMesh.vertexCount) smr = s;
                 if (!smr) continue;
                 var baked = new Mesh();
                 smr.BakeMesh(baked, true);
