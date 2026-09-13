@@ -49,11 +49,16 @@ namespace DazVrBridge
                                     // this each frame so the contribution cannot accumulate
         Vector3 _bendHint;
 
+        // The bones this handle drives, for the joint-limit readout.
+        public int[] ControlledBones { get; private set; }
+        float _overLimit;
+
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
         static readonly Color IkColor = new Color(0.3f, 0.8f, 0.85f, 1f);
         static readonly Color HoverColor = new Color(1.0f, 0.85f, 0.2f, 1f);
         static readonly Color GrabbedColor = new Color(0.3f, 1.0f, 0.4f, 1f);
+        static readonly Color OverLimitColor = new Color(1.0f, 0.25f, 0.2f, 1f);
 
         public void Init(SceneLoader.LoadedFigure figure, int boneIndex, float radius)
         {
@@ -121,6 +126,7 @@ namespace DazVrBridge
             Figure = figure;
             BoneIndex = boneIndex;
             BoneId = figure.BoneJson[boneIndex].Value<string>("id");
+            ControlledBones = new[] { boneIndex };
         }
 
         // Makes this handle an IK effector. Both parent bones must exist on the figure.
@@ -131,6 +137,9 @@ namespace DazVrBridge
             _profile = profile;
             _ik = chain;
             _idleColor = IkColor;
+            ControlledBones = _ikShoulder >= 0
+                ? new[] { _ikShoulder, _ikRoot, _ikMid, BoneIndex }
+                : new[] { _ikRoot, _ikMid, BoneIndex };
             SetState(Current);
             return true;
 
@@ -246,10 +255,20 @@ namespace DazVrBridge
             Apply();
         }
 
+        // Degrees past a Daz joint limit on the worst bone this handle drives.
+        public void SetOverLimit(float degrees)
+        {
+            if (Mathf.Approximately(_overLimit, degrees)) return;
+            _overLimit = degrees;
+            Apply();
+        }
+
         void Apply()
         {
             if (!_renderer) return;
             var c = Current == State.Grabbed ? GrabbedColor : Current == State.Hover ? HoverColor : _idleColor;
+            // Past a joint limit: Daz will pull this pose back on commit, so say so now.
+            if (_overLimit > 0.5f) c = Color.Lerp(c, OverLimitColor, Mathf.Clamp01(0.45f + _overLimit / 40f));
             var a = Current == State.Idle ? _alpha : 1f;
             _renderer.enabled = a > 0.01f;
             if (!_renderer.enabled) return;

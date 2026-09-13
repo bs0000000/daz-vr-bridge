@@ -26,8 +26,15 @@ namespace DazVrBridge
         [Tooltip("Opacity when no controller is tracked (desktop testing).")]
         [Range(0f, 1f)] public float alphaWithoutHands = 0.35f;
 
+        [Header("Joint limits")]
+        [Tooltip("Turn a handle red when a bone it drives is past a Daz joint limit, and list them on the HUD.")]
+        public bool showLimits = true;
+
         public readonly List<BoneHandle> All = new List<BoneHandle>();
+        // Bones currently past a Daz limit, worst first: "l_upperarm y +14.2°".
+        public string LimitText { get; private set; } = "";
         VrRig _rig;
+        readonly List<(string text, float over)> _violations = new List<(string, float)>();
 
         void Start()
         {
@@ -38,7 +45,9 @@ namespace DazVrBridge
 
         void Update()
         {
-            if (!showHandles || All.Count == 0) return;
+            if (All.Count == 0) return;
+            if (showLimits) UpdateLimits();
+            if (!showHandles) return;
             if (!_rig) _rig = FindAnyObjectByType<VrRig>();
 
             var hands = 0;
@@ -57,6 +66,38 @@ namespace DazVrBridge
                 if (_rig.Right && _rig.Right.IsTracked) d = Mathf.Min(d, h.DistanceTo(r));
                 h.SetVisibility(1f - Mathf.InverseLerp(fullDistance * s, showDistance * s, d));
             }
+        }
+
+        // Daz clamps to its joint limits on commit, which is what makes a pose "snap back"
+        // when you let go. Showing the violation while you drag makes that predictable.
+        void UpdateLimits()
+        {
+            _violations.Clear();
+            foreach (var h in All)
+            {
+                if (!h || h.ControlledBones == null) continue;
+                var worst = 0f;
+                foreach (var bone in h.ControlledBones)
+                {
+                    var status = DazEuler.Check(loader, h.Figure, bone);
+                    if (!status.Valid || status.Worst <= 0.5f) continue;
+                    if (status.Worst > worst) worst = status.Worst;
+                    var axis = status.WorstAxis;
+                    var value = axis == "x" ? status.Euler.x : axis == "y" ? status.Euler.y : status.Euler.z;
+                    var min = axis == "x" ? h.Figure.LimitMin[bone].x : axis == "y" ? h.Figure.LimitMin[bone].y : h.Figure.LimitMin[bone].z;
+                    var max = axis == "x" ? h.Figure.LimitMax[bone].x : axis == "y" ? h.Figure.LimitMax[bone].y : h.Figure.LimitMax[bone].z;
+                    var id = h.Figure.BoneJson[bone].Value<string>("id");
+                    _violations.Add(($"{id} {axis} {value:F0}° outside [{min:F0}, {max:F0}]", status.Worst));
+                }
+                h.SetOverLimit(worst);
+            }
+
+            if (_violations.Count == 0) { LimitText = ""; return; }
+            _violations.Sort((a, b) => b.over.CompareTo(a.over));
+            var lines = new List<string>();
+            for (var i = 0; i < _violations.Count && i < 4; i++) lines.Add(_violations[i].text);
+            if (_violations.Count > 4) lines.Add($"+{_violations.Count - 4} more");
+            LimitText = "past Daz limits:\n" + string.Join("\n", lines);
         }
 
         void OnDestroy()

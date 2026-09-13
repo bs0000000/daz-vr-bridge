@@ -10,8 +10,9 @@ namespace DazVrBridge
     public sealed class BridgeHud : MonoBehaviour
     {
         public BridgeSession session;
-        public SceneLoader loader; // optional
-        public PoseSync poseSync;  // optional
+        public SceneLoader loader;   // optional
+        public PoseSync poseSync;    // optional
+        public BoneHandles handles;  // optional
         public TMP_Text text;
 
         string _dazVersion = "";
@@ -23,6 +24,7 @@ namespace DazVrBridge
             if (!session) session = FindAnyObjectByType<BridgeSession>();
             if (!loader) loader = FindAnyObjectByType<SceneLoader>();
             if (!poseSync) poseSync = FindAnyObjectByType<PoseSync>();
+            if (!handles) handles = FindAnyObjectByType<BoneHandles>();
             if (session)
             {
                 session.ControlFrame += OnFrame;
@@ -33,6 +35,7 @@ namespace DazVrBridge
 
         string _lastSelfTest = "";
         string _lastHands = "";
+        string _lastLimits = "";
         VrRig _rig;
         float _nextHandsCheck;
 
@@ -45,7 +48,8 @@ namespace DazVrBridge
             {
                 _nextHandsCheck = Time.time + 0.1f; // fast enough to watch buttons
                 var hands = HandsStatus();
-                if (hands != _lastHands) { _lastHands = hands; Render(); }
+                var limits = handles ? handles.LimitText : "";
+                if (hands != _lastHands || limits != _lastLimits) { _lastHands = hands; _lastLimits = limits; Render(); }
             }
         }
 
@@ -95,7 +99,8 @@ namespace DazVrBridge
                     var status = loader ? "\n" + loader.Status : "";
                     var selfTest = poseSync && poseSync.LastSelfTest.Length > 0 ? "\n" + poseSync.LastSelfTest : "";
                     var hands = _lastHands.Length > 0 ? "\n<size=70%>" + _lastHands + "</size>" : "";
-                    text.text = $"<b>{name}</b>\n{_sceneNodes} nodes · Daz Studio {_dazVersion}{status}{selfTest}{hands}";
+                    var limits = _lastLimits.Length > 0 ? "\n<color=#FF6050>" + _lastLimits + "</color>" : "";
+                    text.text = $"<b>{name}</b>\n{_sceneNodes} nodes · Daz Studio {_dazVersion}{status}{selfTest}{limits}{hands}";
                     break;
                 case BridgeClient.State.Failed:
                     text.text = $"Failed: {session.Control.LastError}\nretrying…";

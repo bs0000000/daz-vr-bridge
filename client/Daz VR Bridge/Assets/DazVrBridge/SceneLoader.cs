@@ -50,6 +50,14 @@ namespace DazVrBridge
             public JArray BoneJson;                 // manifest skeleton.bones, same order as Bones
             public Dictionary<string, int> ByName;
             public Matrix4x4[] BindPoses;
+
+            // Per-bone manifest data, parsed once: the limit check runs every frame.
+            public Quaternion[] OrientUnity;        // orient, mirrored into Unity space
+            public Quaternion[] OrientDaz;          // orient, raw Daz components
+            public string[] RotOrder;               // "XYZ", "YZX", …
+            public Vector3[] LimitMin, LimitMax;    // degrees, per axis
+            public bool[] Clamped;
+            public int[] ParentBone;                // -1 when the parent is not a bone
         }
         public readonly Dictionary<string, LoadedFigure> Figures = new Dictionary<string, LoadedFigure>();
 
@@ -316,6 +324,8 @@ namespace DazVrBridge
             for (var i = 0; i < bones.Count; i++)
                 fig.BindPoses[i] = fig.Bones[i].worldToLocalMatrix * go.transform.localToWorldMatrix;
 
+            CacheBoneData(fig, bones);
+
             if (applyCurrentPose) ApplyWorldPose(fig, bones);
 
             AddSkinnedMesh(n, go, fig);
@@ -354,15 +364,59 @@ namespace DazVrBridge
             }
         }
 
+        static void CacheBoneData(LoadedFigure fig, JArray bones)
+        {
+            var n = bones.Count;
+            fig.OrientUnity = new Quaternion[n];
+            fig.OrientDaz = new Quaternion[n];
+            fig.RotOrder = new string[n];
+            fig.LimitMin = new Vector3[n];
+            fig.LimitMax = new Vector3[n];
+            fig.Clamped = new bool[n];
+            fig.ParentBone = new int[n];
+
+            for (var i = 0; i < n; i++)
+            {
+                var b = (JObject)bones[i];
+                var o = b["orient"];
+                fig.OrientUnity[i] = DazSpace.Rot(o);
+                fig.OrientDaz[i] = new Quaternion(o[0].Value<float>(), o[1].Value<float>(), o[2].Value<float>(), o[3].Value<float>());
+                fig.RotOrder[i] = b.Value<string>("rot_order") ?? "XYZ";
+                fig.Clamped[i] = b.Value<bool?>("clamped") ?? false;
+
+                var lim = b["limits_deg"];
+                if (lim != null)
+                {
+                    fig.LimitMin[i] = new Vector3(lim["x"][0].Value<float>(), lim["y"][0].Value<float>(), lim["z"][0].Value<float>());
+                    fig.LimitMax[i] = new Vector3(lim["x"][1].Value<float>(), lim["y"][1].Value<float>(), lim["z"][1].Value<float>());
+                }
+                else
+                {
+                    fig.LimitMin[i] = new Vector3(-180f, -180f, -180f);
+                    fig.LimitMax[i] = new Vector3(180f, 180f, 180f);
+                }
+
+                var parent = b.Value<string>("parent");
+                fig.ParentBone[i] = parent != null && fig.ByName.TryGetValue(parent, out var pi) ? pi : -1;
+            }
+        }
+
         // Inverse of the rotation half of ApplyWorldPose: a Unity bone's current world
         // rotation expressed as Daz's ws.rot (Daz quaternion sense, Daz world space).
-        public float[] DazWorldRotOf(LoadedFigure fig, int boneIndex)
+        // The Quaternion is a raw 4-component container here, not a Unity rotation.
+        public Quaternion DazWorldRotQ(LoadedFigure fig, int boneIndex)
         {
             var root = _root.transform;
             var wUnity = Quaternion.Inverse(root.rotation) * fig.Bones[boneIndex].rotation
-                       * Quaternion.Inverse(DazSpace.Rot(fig.BoneJson[boneIndex]["orient"]));
+                       * Quaternion.Inverse(fig.OrientUnity[boneIndex]);
             // RotFromDazWorld is (x, y, -z, w) and is its own inverse.
-            return new[] { wUnity.x, wUnity.y, -wUnity.z, wUnity.w };
+            return new Quaternion(wUnity.x, wUnity.y, -wUnity.z, wUnity.w);
+        }
+
+        public float[] DazWorldRotOf(LoadedFigure fig, int boneIndex)
+        {
+            var q = DazWorldRotQ(fig, boneIndex);
+            return new[] { q.x, q.y, q.z, q.w };
         }
 
         // node.state -> place a node from its Daz world transform (and lens for cameras).

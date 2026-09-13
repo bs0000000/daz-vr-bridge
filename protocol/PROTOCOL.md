@@ -150,7 +150,18 @@ are not shipped yet.
   (Hamilton product, local on the left — i.e. standard `world = parent · local` once
   conjugated). Bone skinning is `p' = ws.pos + S · R(conj(ws.rot)) · (p − origin)` with `p`
   in figure space.
-- `q_local` relates to the Euler controls as `o⁻¹ · (q₁q₂q₃)⁻¹ · o` (o = `orient`, qᵢ = axis
-  rotations in `rot_order` order, System.Numerics product semantics). Clients should pose
-  from `ws` (no frame ambiguity) and let the plugin do Euler conversion on commit.
+- **A bone's Daz X/Y/Z rotation values from its world rotations** (verified over 117 posed
+  Genesis 9 bones spanning all five rotation orders the rig uses, worst error 0.00002°):
+
+  ```
+  q_local = ws_child ⊗ inverse(ws_parent)            Hamilton, raw Daz components
+  E       = orient ⊗ conj(q_local) ⊗ inverse(orient)
+  E       = R_a3(v3) · R_a2(v2) · R_a1(v1)           a1..a3 = rot_order
+  ```
+
+  so `E` decomposes as Tait-Bryan angles in the **reversed** `rot_order`, and the per-axis
+  results are exactly `rot_deg`. The client uses this to flag poses that exceed
+  `limits_deg` before committing (`DazEuler.cs`). Bones whose parent is not a bone (the
+  root) follow a different relation and are skipped; their limits are ±180 anyway.
+  Committing still sends `ws` rotations and lets the plugin do the conversion.
 - Never more than one `pose.commit` in flight.

@@ -78,8 +78,15 @@ across the body or down to an armrest is shoulder-girdle motion in a real body, 
 without it the upper arm alone has to swing past its Daz limits, which Daz then corrects
 hard on commit.
 
-Daz's joint limits are still applied on commit and the answering `pose.state` snaps the
-pose, so it can settle a little when you let go; the client does not clamp during a drag yet.
+**Joint limits** (`BoneHandles` → Show Limits). Daz clamps to its per-bone limits on commit,
+which is what makes a pose settle when you let go. The client now computes each bone's Daz
+X/Y/Z rotation values live and flags the ones outside their range: the handle driving them
+turns **red** (deeper the further past), and the HUD lists them, worst first —
+`l_upperarm y 52° outside [-110, 40]`. So you can see the correction coming and work
+around it instead of being surprised on release. The decomposition is documented in
+`protocol/PROTOCOL.md`; it is verified to 0.00002° against Daz's own values.
+
+The client does not yet *clamp* to the limits during a drag — it only shows them.
 
 Controllers also draw through the body. Hover a handle (yellow), squeeze the
 **trigger** (green) and move your hand: the bone swings about its joint to keep pointing at
@@ -145,6 +152,7 @@ hand "(imu)".
 | `PoseSync.cs` | `pose.state` in, `pose.commit` out, self-test; keyboard triggers for editor testing. |
 | `RigProfile.cs` | Loads `Resources/RigProfiles/<rig>.json`: grabbable/hidden bones, IK chains, facing direction, mirror prefixes. |
 | `TwoBoneIk.cs` | Analytic two-bone solver (law of cosines) with bend-plane preservation. |
+| `DazEuler.cs` | A bone's pose as Daz's X/Y/Z rotation values, for live joint-limit checks. |
 | `BoneHandle.cs` / `BoneHandles.cs` | Grab spheres on grabbable bones, spawned per figure after load. |
 | `VrHand.cs` / `VrRig.cs` | Tracked controllers from the Input System; hover/trigger grab of any `IGrabbable`. |
 | `IGrabbable.cs` / `NodeHandle.cs` | The grab contract; rigid grab-and-move for props, cameras, lights. |
