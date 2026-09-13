@@ -34,15 +34,27 @@ namespace DazVrBridge
         [Tooltip("Let arm chains roll the forearm to recover wrist twist (profile: roll_assist).")]
         public bool rollAssist = true;
 
+        [Header("Surfaces")]
+        [Tooltip("Hands and feet stop at prop surfaces instead of passing through them.")]
+        public bool surfaceSnap = true;
+        [Tooltip("Radius of the sphere swept for the hand or foot, in meters.")]
+        public float snapRadius = 0.05f;
+
         [Header("Joint limits")]
         [Tooltip("Turn a handle red when a bone it drives is at or past a Daz joint limit, and list them on the HUD.")]
         public bool showLimits = true;
 
         public readonly List<BoneHandle> All = new List<BoneHandle>();
-        // Bones currently past a Daz limit, worst first: "l_upperarm y +14.2°".
+        // Bones currently at a Daz limit, most pinned first: "l_upperarm y 40° at [-110, 40]".
         public string LimitText { get; private set; } = "";
         VrRig _rig;
-        readonly List<(string text, float over)> _violations = new List<(string, float)>();
+
+        // Per handle, the last limit reading. The handle in your hand is re-checked every
+        // frame; the rest ride a 15 Hz sweep, since they only drive the display.
+        float[] _pinned;
+        string[] _pinnedText;
+        float _nextFullScan;
+        readonly List<(string text, float rank)> _violations = new List<(string, float)>();
 
         void Start()
         {
@@ -80,18 +92,31 @@ namespace DazVrBridge
         // when you let go. Showing the violation while you drag makes that predictable.
         void UpdateLimits()
         {
-            _violations.Clear();
-            foreach (var h in All)
+            if (_pinned == null || _pinned.Length != All.Count)
             {
+                _pinned = new float[All.Count];
+                _pinnedText = new string[All.Count];
+            }
+
+            var full = Time.time >= _nextFullScan;
+            if (full) _nextFullScan = Time.time + 0.066f;
+
+            for (var i = 0; i < All.Count; i++)
+            {
+                var h = All[i];
                 if (!h || h.ControlledBones == null) continue;
+                // The held handle matters every frame; everything else is just the display.
+                if (!full && h.Current == BoneHandle.State.Idle) continue;
+
                 var pinned = 0f;
+                string text = null;
                 foreach (var bone in h.ControlledBones)
                 {
                     var status = DazEuler.Check(loader, h.Figure, bone);
                     if (!status.Valid) continue;
                     var p = status.Pinned();
-                    if (p <= 0f) continue;
-                    if (p > pinned) pinned = p;
+                    if (p <= 0f || p <= pinned) continue;
+                    pinned = p;
 
                     var axis = status.WorstAxis;
                     var value = axis == "x" ? status.Euler.x : axis == "y" ? status.Euler.y : status.Euler.z;
@@ -99,13 +124,19 @@ namespace DazVrBridge
                     var max = axis == "x" ? h.Figure.LimitMax[bone].x : axis == "y" ? h.Figure.LimitMax[bone].y : h.Figure.LimitMax[bone].z;
                     var id = h.Figure.BoneJson[bone].Value<string>("id");
                     var word = status.Worst > 0.5f ? "past" : "at";
-                    _violations.Add(($"{id} {axis} {value:F0}° {word} [{min:F0}, {max:F0}]", p + status.Worst));
+                    text = $"{id} {axis} {value:F0}° {word} [{min:F0}, {max:F0}]";
                 }
+                _pinned[i] = pinned;
+                _pinnedText[i] = text;
                 h.SetOverLimit(pinned);
             }
 
+            _violations.Clear();
+            for (var i = 0; i < All.Count; i++)
+                if (_pinnedText[i] != null) _violations.Add((_pinnedText[i], _pinned[i]));
+
             if (_violations.Count == 0) { LimitText = ""; return; }
-            _violations.Sort((a, b) => b.over.CompareTo(a.over));
+            _violations.Sort((a, b) => b.rank.CompareTo(a.rank));
             var lines = new List<string>();
             for (var i = 0; i < _violations.Count && i < 4; i++) lines.Add(_violations[i].text);
             if (_violations.Count > 4) lines.Add($"+{_violations.Count - 4} more");
@@ -120,6 +151,8 @@ namespace DazVrBridge
         public void Rebuild()
         {
             All.Clear(); // old handles died with the old DazScene
+            _pinned = null;
+            LimitText = "";
             foreach (var fig in loader.Figures.Values)
             {
                 var profile = RigProfile.Load(fig.Rig);
@@ -137,6 +170,8 @@ namespace DazVrBridge
                     h.ClampToLimits = clampToLimits;
                     h.IkIterations = ikIterations;
                     h.RollAssist = rollAssist;
+                    h.SurfaceSnap = surfaceSnap;
+                    h.SnapRadius = snapRadius;
                     if (id == profile.Root) h.InitRing(fig, i, rootRingRadius, rootRingTube);
                     else h.Init(fig, i, handleRadius);
                     if (ikEnabled && profile.IkByEndBone.TryGetValue(id, out var chain) && h.SetIkChain(profile, chain)) ik++;

@@ -74,6 +74,8 @@ namespace DazVrBridge
 
         [Tooltip("Props larger than this (meters, longest side) get no grab handle: environments stay put.")]
         public float maxGrabbablePropSize = 2.0f;
+        [Tooltip("Give props a mesh collider so hands and feet can rest on their surfaces. Costs a little load time per prop.")]
+        public bool propMeshColliders = true;
 
         public Transform Root => _root ? _root.transform : null;
         public event System.Action SceneBuilt;
@@ -485,6 +487,15 @@ namespace DazVrBridge
             var mesh = BuildUnityMesh(src, n.Value<string>("label"));
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             go.AddComponent<MeshRenderer>().sharedMaterials = BuildMaterials(n, src.Groups);
+
+            // The real surface, for resting hands and feet on. Non-trigger, so the
+            // grab colliders (which are triggers) stay out of these queries.
+            if (propMeshColliders)
+            {
+                var col = go.AddComponent<MeshCollider>();
+                col.sharedMesh = mesh;
+                col.convex = false;
+            }
         }
 
         static Mesh BuildUnityMesh(DzmMesh src, string name)

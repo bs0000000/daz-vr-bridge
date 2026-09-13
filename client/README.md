@@ -92,6 +92,14 @@ hard on commit.
   actually means — and lists them on the HUD, `l_upperarm y 40° at [-110, 40]`. With
   clamping off the same display reads `past` instead, flagging what Daz will correct.
 
+**Surfaces** (`BoneHandles` → Surface Snap, Snap Radius; `SceneLoader` → Prop Mesh
+Colliders). Hands and feet do not pass through props. The effector sweeps a sphere from
+where it was to where your controller wants it, stops at the first surface, and slides
+along it — so putting a hand on the couch arm rests it there, and lifting frees it at
+once. Props get a real mesh collider at load for this (non-trigger, so it never collides
+with the grab handles). Her own body has no colliders yet, so a hand can still pass
+through her.
+
 Arm chains also set `roll_assist`: the wrist alone can only twist `z[-70, 80]`, so the
 solver rolls the forearm about the elbow-to-wrist axis (which moves no joint, leaving the
 IK solution intact) to find the roll that leaves the least total violation on the forearm

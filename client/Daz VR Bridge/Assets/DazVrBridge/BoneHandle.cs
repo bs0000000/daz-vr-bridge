@@ -58,6 +58,15 @@ namespace DazVrBridge
         public bool ClampToLimits = true;
         public bool RollAssist = true;
         public int IkIterations = 4;
+        public bool SurfaceSnap = true;
+        public float SnapRadius = 0.05f;
+
+        // Where the effector actually ended up last frame, which is where the next
+        // frame's sweep starts. Surfaces are resolved by moving from there, not by
+        // testing the controller's position, so the hand slides instead of sticking.
+        Vector3 _lastEffector;
+        bool _onSurface;
+        public bool OnSurface => _onSurface;
 
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
@@ -186,6 +195,8 @@ namespace DazVrBridge
             _offsetRot = Quaternion.Inverse(hand.rotation) * Bone.rotation;
             _bendHint = Vector3.zero; // the solver seeds it from the limb's current bend
             if (_ikShoulder >= 0) _shoulderRot0 = Figure.Bones[_ikShoulder].rotation;
+            _lastEffector = Bone.position;
+            _onSurface = false;
             SetState(State.Grabbed);
             if (!_poseSync) _poseSync = FindAnyObjectByType<PoseSync>();
             _poseSync?.SetGrabbed(Figure.Id, true);
@@ -203,8 +214,11 @@ namespace DazVrBridge
 
             if (_ik != null)
             {
-                // Carry the hand/foot; the limb above solves to reach it.
-                SolveIk(hand.position + hand.rotation * _offsetPos, hand.rotation * _offsetRot);
+                // Carry the hand/foot; the limb above solves to reach it. Props stop it:
+                // a hand put on an armrest rests there instead of passing through.
+                var desired = hand.position + hand.rotation * _offsetPos;
+                _lastEffector = ResolveAgainstSurfaces(desired);
+                SolveIk(_lastEffector, hand.rotation * _offsetRot);
                 return;
             }
 
@@ -220,6 +234,49 @@ namespace DazVrBridge
             twist = twist.x == 0f && twist.y == 0f && twist.z == 0f && twist.w == 0f ? Quaternion.identity : twist.normalized;
 
             Bone.rotation = twist * swing * _boneRot0;
+        }
+
+        // Collide-and-slide from where the effector was to where the controller wants it:
+        // sweep a sphere, stop at the first surface, project what is left onto that
+        // surface and sweep again. So a hand pushed into a couch arm settles on it and
+        // then slides along it, and lifting the controller frees it immediately.
+        Vector3 ResolveAgainstSurfaces(Vector3 desired)
+        {
+            _onSurface = false;
+            if (!SurfaceSnap || SnapRadius <= 0f) return desired;
+
+            var motion = desired - _lastEffector;
+            var remaining = motion.magnitude;
+            if (remaining < 1e-5f) return desired;
+
+            // Already intersecting something (a prop moved onto the hand, or the pose
+            // started inside one): do not fight it, or the hand would never get out.
+            if (Physics.CheckSphere(_lastEffector, SnapRadius, ~0, QueryTriggerInteraction.Ignore))
+                return desired;
+
+            var dir = motion / remaining;
+            var pos = _lastEffector;
+            const float skin = 0.001f;
+
+            for (var i = 0; i < 3 && remaining > 1e-5f; i++)
+            {
+                if (!Physics.SphereCast(pos, SnapRadius, dir, out var hit, remaining, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    pos += dir * remaining;
+                    break;
+                }
+
+                _onSurface = true;
+                var travelled = Mathf.Max(0f, hit.distance - skin);
+                pos += dir * travelled;
+                remaining -= travelled;
+
+                var slide = Vector3.ProjectOnPlane(dir * remaining, hit.normal);
+                remaining = slide.magnitude;
+                if (remaining < 1e-5f) break;
+                dir = slide / remaining;
+            }
+            return pos;
         }
 
         // The limb solve.
