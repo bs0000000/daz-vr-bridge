@@ -17,6 +17,7 @@ namespace DazVrBridge
         public State Current { get; private set; } = State.Idle;
 
         Renderer _renderer;
+        float _alpha = 1f;
         static readonly Color IdleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color HoverColor = new Color(1.0f, 0.85f, 0.2f, 1f);
         static readonly Color GrabbedColor = new Color(0.3f, 1.0f, 0.4f, 1f);
@@ -52,9 +53,25 @@ namespace DazVrBridge
         public void SetState(State s)
         {
             Current = s;
+            Apply();
+        }
+
+        // 0 = hidden, 1 = fully visible. Hovered/grabbed handles ignore it.
+        public void SetVisibility(float alpha)
+        {
+            _alpha = Mathf.Clamp01(alpha);
+            Apply();
+        }
+
+        void Apply()
+        {
             if (!_renderer) return;
+            var c = Current == State.Grabbed ? GrabbedColor : Current == State.Hover ? HoverColor : IdleColor;
+            var a = Current == State.Idle ? _alpha : 1f;
+            _renderer.enabled = a > 0.01f;
+            if (!_renderer.enabled) return;
+            c.a = a;
             var block = new MaterialPropertyBlock();
-            var c = s == State.Grabbed ? GrabbedColor : s == State.Hover ? HoverColor : IdleColor;
             block.SetColor("_BaseColor", c);
             block.SetColor("_Color", c);
             _renderer.SetPropertyBlock(block);
@@ -64,7 +81,10 @@ namespace DazVrBridge
         static Material HandleMaterial()
         {
             if (_handleMaterial) return _handleMaterial;
-            var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
+            // Overlay shader draws through the body; fall back to plain unlit if it is missing.
+            var shader = Shader.Find("DazVrBridge/HandleOverlay")
+                      ?? Shader.Find("Universal Render Pipeline/Unlit")
+                      ?? Shader.Find("Unlit/Color");
             _handleMaterial = new Material(shader) { name = "BoneHandle" };
             return _handleMaterial;
         }

@@ -55,7 +55,9 @@ No XR Interaction Toolkit rig needed. Two components:
   grabbable bone from the figure's rig profile (`Resources/RigProfiles/<rig>.json`, kept
   in sync with `/profiles`).
 
-Handles sit at the middle of each bone segment. Hover one (yellow), squeeze the
+Handles sit at the middle of each bone segment and draw *through* the body (so the hip
+and spine handles are visible), fading in as a controller comes within 30 cm and fully
+visible under 10 cm (`BoneHandles` → Show/Full Distance). Hover one (yellow), squeeze the
 **trigger** (green) and move your hand: the bone swings about its joint to keep pointing at
 your hand, so dragging the forearm drags the forearm; roll the controller to twist the
 bone about its axis. Children follow as a chain (this is FK — placing a hand somewhere
