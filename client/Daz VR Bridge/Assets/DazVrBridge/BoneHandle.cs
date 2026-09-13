@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace DazVrBridge
 {
-    public sealed class BoneHandle : MonoBehaviour
+    public sealed class BoneHandle : MonoBehaviour, IGrabbable
     {
         public enum State { Idle, Hover, Grabbed }
         public enum Kind { Sphere, Ring }
@@ -22,10 +22,18 @@ namespace DazVrBridge
         public Transform Bone => Figure.Bones[BoneIndex];
 
         public State Current { get; private set; } = State.Idle;
+        public bool IsGrabbed => Current == State.Grabbed;
 
         Renderer _renderer;
         float _alpha = 1f;
         float _ringRadius;
+        static PoseSync _poseSync;
+
+        // Grab state (aim-based FK): the bone swings about its origin so the segment
+        // keeps pointing at the hand; the hand's roll about that axis twists the bone.
+        Vector3 _dir0;          // bone origin -> hand at grab time (world)
+        Quaternion _boneRot0;   // bone world rotation at grab time
+        Quaternion _handRot0;   // hand world rotation at grab time
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
         static readonly Color HoverColor = new Color(1.0f, 0.85f, 0.2f, 1f);
@@ -114,6 +122,47 @@ namespace DazVrBridge
         {
             Current = s;
             Apply();
+        }
+
+        // ---- IGrabbable
+
+        public void SetHover(bool on)
+        {
+            if (IsGrabbed) return;
+            SetState(on ? State.Hover : State.Idle);
+        }
+
+        public void BeginGrab(Transform hand)
+        {
+            _dir0 = hand.position - Bone.position;
+            _boneRot0 = Bone.rotation;
+            _handRot0 = hand.rotation;
+            SetState(State.Grabbed);
+            if (!_poseSync) _poseSync = FindAnyObjectByType<PoseSync>();
+            _poseSync?.SetGrabbed(Figure.Id, true);
+        }
+
+        public void UpdateGrab(Transform hand)
+        {
+            var dir = hand.position - Bone.position;
+            if (_dir0.sqrMagnitude < 1e-6f || dir.sqrMagnitude < 1e-6f) return;
+
+            var swing = Quaternion.FromToRotation(_dir0, dir);
+
+            var delta = hand.rotation * Quaternion.Inverse(_handRot0);
+            var axis = dir.normalized;
+            var proj = Vector3.Dot(new Vector3(delta.x, delta.y, delta.z), axis) * axis;
+            var twist = new Quaternion(proj.x, proj.y, proj.z, delta.w);
+            twist = twist.x == 0f && twist.y == 0f && twist.z == 0f && twist.w == 0f ? Quaternion.identity : twist.normalized;
+
+            Bone.rotation = twist * swing * _boneRot0;
+        }
+
+        public void EndGrab(Transform hand)
+        {
+            SetState(State.Idle);
+            _poseSync?.SetGrabbed(Figure.Id, false);
+            _poseSync?.Commit(Figure, $"VR pose: {BoneId}");
         }
 
         // 0 = hidden, 1 = fully visible. Hovered/grabbed handles ignore it.

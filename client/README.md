@@ -67,7 +67,24 @@ with the elbow solving itself is IK, Phase 4). Let go and the figure is committe
 as one undo step named after the bone; Daz's answering `pose.state` snaps anything its
 joint limits clamped. Face, twist and finger bones have no handles by design.
 
-Keep `Bridge` (BridgeSession, SceneLoader, PoseSync, BoneHandles) as a plain object at
+## Props, cameras, lights (Phase 3)
+
+Add **NodeSync** to the `Bridge` object. Then:
+
+- **Cameras** appear as a small dark body with a wireframe frustum and a live
+  picture-in-picture panel floating above it, rendering the VR scene through the Daz lens
+  (focal length, frame width, aspect). Grab the body and carry it; release commits
+  `camera.set` (one undo step in Daz). Change the focal length in Daz and the panel follows.
+- **Props** up to 2 m (`SceneLoader` → Max Grabbable Prop Size) can be grabbed anywhere on
+  their bounds and moved; environments larger than that stay put. A prop parented to a
+  bone in Daz (something held in a hand) rides on that bone.
+- **Lights** show as a small emitter with a direction line (spot/distant) or a sphere
+  (point), light the clay preview roughly, and can be moved the same way.
+
+Objects follow the hand rigidly; bones use the swing/twist drag. Moving a node at the desk
+updates VR within ~100 ms (`node.state`).
+
+Keep `Bridge` (BridgeSession, SceneLoader, PoseSync, NodeSync, BoneHandles) as a plain object at
 the scene root rather than under the Canvas — the Canvas is scaled 0.001 and `DazScene`
 is parented to the SceneLoader's object. Place `Bridge` about 1.5 m in front of the
 XR Origin.
@@ -87,4 +104,7 @@ XR Origin.
 | `PoseSync.cs` | `pose.state` in, `pose.commit` out, self-test; keyboard triggers for editor testing. |
 | `RigProfile.cs` | Loads `Resources/RigProfiles/<rig>.json`: grabbable/hidden bones, chains, mirror prefixes. |
 | `BoneHandle.cs` / `BoneHandles.cs` | Grab spheres on grabbable bones, spawned per figure after load. |
-| `VrHand.cs` / `VrRig.cs` | Tracked controllers from the Input System; hover/grip FK grab; commit on release. |
+| `VrHand.cs` / `VrRig.cs` | Tracked controllers from the Input System; hover/trigger grab of any `IGrabbable`. |
+| `IGrabbable.cs` / `NodeHandle.cs` | The grab contract; rigid grab-and-move for props, cameras, lights. |
+| `NodeSync.cs` | `node.state` in, `node.transform` / `camera.set` out. |
+| `CameraView.cs` / `LightGizmo.cs` | Camera body + frustum + picture-in-picture; light emitter gizmo + Unity light. |

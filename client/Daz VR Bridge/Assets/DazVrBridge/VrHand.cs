@@ -24,7 +24,6 @@ namespace DazVrBridge
         public GrabButton grabButton = GrabButton.Trigger;
         [Tooltip("Handles within this distance of the controller can be grabbed (meters).")]
         public float grabRadius = 0.06f;
-        public PoseSync poseSync;
 
         public bool IsTracked { get; private set; }
         public string DeviceName { get; private set; } = "";
@@ -32,11 +31,8 @@ namespace DazVrBridge
         InputAction _position, _rotation, _grab, _isTracked;
         GameObject _vis;
 
-        BoneHandle _hover;
-        BoneHandle _grabbed;
-        Vector3 _dir0;          // bone origin -> controller at grab time (world)
-        Quaternion _boneRot0;   // bone world rotation at grab time
-        Quaternion _ctrlRot0;   // controller world rotation at grab time
+        IGrabbable _hover;
+        IGrabbable _grabbed;
 
         readonly Collider[] _overlap = new Collider[32];
 
@@ -76,11 +72,6 @@ namespace DazVrBridge
             _position.Disable(); _rotation.Disable(); _grab.Disable(); _isTracked.Disable();
         }
 
-        void Start()
-        {
-            if (!poseSync) poseSync = FindAnyObjectByType<PoseSync>();
-        }
-
         void Update()
         {
             var device = _position.activeControl?.device;
@@ -96,81 +87,56 @@ namespace DazVrBridge
                 if (rot.x != 0f || rot.y != 0f || rot.z != 0f || rot.w != 0f) transform.localRotation = rot;
             }
 
-            if (_grabbed)
+            if (_grabbed != null)
             {
-                Drag();
+                _grabbed.UpdateGrab(transform);
                 if (!_grab.IsPressed() || !IsTracked) Release();
                 return;
             }
 
             if (!IsTracked) { ClearHover(); return; }
             UpdateHover();
-            if (_hover && _grab.WasPressedThisFrame()) Grab(_hover);
+            if (_hover != null && _grab.WasPressedThisFrame()) Grab(_hover);
         }
 
         void UpdateHover()
         {
-            BoneHandle best = null;
+            IGrabbable best = null;
             var bestDist = float.MaxValue;
             var n = Physics.OverlapSphereNonAlloc(transform.position, grabRadius, _overlap, ~0, QueryTriggerInteraction.Collide);
             for (var i = 0; i < n; i++)
             {
-                var h = _overlap[i].GetComponentInParent<BoneHandle>(); // ring colliders are children
-                if (!h || h.Current == BoneHandle.State.Grabbed) continue;
-                var d = h.DistanceTo(transform.position);
-                if (d < bestDist) { bestDist = d; best = h; }
+                var g = _overlap[i].GetComponentInParent<IGrabbable>(); // ring/body colliders are children
+                if (g == null || g.IsGrabbed) continue;
+                var d = g.DistanceTo(transform.position);
+                if (d < bestDist) { bestDist = d; best = g; }
             }
             if (best != _hover)
             {
                 ClearHover();
                 _hover = best;
-                if (_hover) _hover.SetState(BoneHandle.State.Hover);
+                _hover?.SetHover(true);
             }
         }
 
         void ClearHover()
         {
-            if (_hover && _hover.Current == BoneHandle.State.Hover) _hover.SetState(BoneHandle.State.Idle);
+            _hover?.SetHover(false);
             _hover = null;
         }
 
-        void Grab(BoneHandle h)
+        void Grab(IGrabbable g)
         {
-            _grabbed = h;
+            _grabbed = g;
             _hover = null;
-            _dir0 = transform.position - h.Bone.position;
-            _boneRot0 = h.Bone.rotation;
-            _ctrlRot0 = transform.rotation;
-            h.SetState(BoneHandle.State.Grabbed);
-            poseSync?.SetGrabbed(h.Figure.Id, true);
-        }
-
-        void Drag()
-        {
-            var bone = _grabbed.Bone;
-            var dir = transform.position - bone.position;
-            if (_dir0.sqrMagnitude < 1e-6f || dir.sqrMagnitude < 1e-6f) return;
-
-            // Swing: the rotation that carries the grab-time direction onto the current one.
-            var swing = Quaternion.FromToRotation(_dir0, dir);
-
-            // Twist: how much the controller has rolled about the current bone-to-hand axis.
-            var delta = transform.rotation * Quaternion.Inverse(_ctrlRot0);
-            var axis = dir.normalized;
-            var proj = Vector3.Dot(new Vector3(delta.x, delta.y, delta.z), axis) * axis;
-            var twist = new Quaternion(proj.x, proj.y, proj.z, delta.w);
-            twist = twist.x == 0f && twist.y == 0f && twist.z == 0f && twist.w == 0f ? Quaternion.identity : twist.normalized;
-
-            bone.rotation = twist * swing * _boneRot0;
+            g.BeginGrab(transform);
         }
 
         void Release()
         {
-            var h = _grabbed;
+            var g = _grabbed;
             _grabbed = null;
-            h.SetState(BoneHandle.State.Idle);
-            poseSync?.SetGrabbed(h.Figure.Id, false);
-            poseSync?.Commit(h.Figure, $"VR pose: {h.BoneId}");
+            g.EndGrab(transform);
         }
 
         // For the HUD: every XR controller the Input System currently sees.

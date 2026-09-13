@@ -52,6 +52,21 @@ namespace DazVrBridge
             public Matrix4x4[] BindPoses;
         }
         public readonly Dictionary<string, LoadedFigure> Figures = new Dictionary<string, LoadedFigure>();
+
+        // Every manifest node by id (figures included), for NodeSync and the handles.
+        public sealed class LoadedNode
+        {
+            public string Id;
+            public string Label;
+            public string Type;     // figure | follower | prop | camera | light | null
+            public GameObject Go;
+            public JObject Json;
+        }
+        public readonly Dictionary<string, LoadedNode> Nodes = new Dictionary<string, LoadedNode>();
+
+        [Tooltip("Props larger than this (meters, longest side) get no grab handle: environments stay put.")]
+        public float maxGrabbablePropSize = 2.0f;
+
         public Transform Root => _root ? _root.transform : null;
         public event System.Action SceneBuilt;
 
@@ -162,6 +177,7 @@ namespace DazVrBridge
         {
             if (_root) Destroy(_root);
             Figures.Clear();
+            Nodes.Clear();
 
             // The whole Daz scene lives under this component's GameObject, so moving,
             // rotating or scaling that object places the scene relative to the XR rig.
@@ -173,15 +189,18 @@ namespace DazVrBridge
             var nodes = (JArray)_manifest["nodes"];
 
             // Pass 1: node objects at their Daz world transforms, expressed relative to the root.
+            // Node rotations are Daz WORLD rotations (Daz quaternion sense) -> RotFromDazWorld.
             foreach (JObject n in nodes)
             {
+                var id = n.Value<string>("id");
                 var go = new GameObject(n.Value<string>("label"));
                 go.transform.SetParent(_root.transform, false);
                 var t = n["transform"];
                 go.transform.localPosition = DazSpace.Pos(t["pos"]);
-                go.transform.localRotation = DazSpace.Rot(t["rot"]);
+                go.transform.localRotation = DazSpace.RotFromDazWorld(t["rot"]);
                 go.transform.localScale = DazSpace.Scale(t["scale"]);
-                byId[n.Value<string>("id")] = go;
+                byId[id] = go;
+                Nodes[id] = new LoadedNode { Id = id, Label = n.Value<string>("label"), Type = n.Value<string>("type"), Go = go, Json = n };
             }
 
             // Pass 2: hierarchy. Transforms are already absolute, so keep world placement.
@@ -192,7 +211,7 @@ namespace DazVrBridge
                     byId[n.Value<string>("id")].transform.SetParent(pgo.transform, true);
             }
 
-            // Pass 3: figures (skeleton + skinned mesh), then followers, then props.
+            // Pass 3: figures (skeleton + skinned mesh), then followers, props, cameras, lights.
             foreach (JObject n in nodes)
                 if (n.Value<string>("type") == "figure")
                     figures[n.Value<string>("id")] = BuildFigure(n, byId[n.Value<string>("id")]);
@@ -200,7 +219,8 @@ namespace DazVrBridge
             foreach (JObject n in nodes)
             {
                 var type = n.Value<string>("type");
-                var go = byId[n.Value<string>("id")];
+                var id = n.Value<string>("id");
+                var go = byId[id];
                 if (type == "follower")
                 {
                     var target = n.Value<string>("follower_of");
@@ -217,7 +237,35 @@ namespace DazVrBridge
                 else if (type == "prop")
                 {
                     AddStaticMesh(n, go);
+                    var r = go.GetComponent<Renderer>();
+                    if (r)
+                    {
+                        var size = r.bounds.size;
+                        if (Mathf.Max(size.x, size.y, size.z) <= maxGrabbablePropSize)
+                        {
+                            var col = go.AddComponent<BoxCollider>();
+                            col.isTrigger = true;
+                            go.AddComponent<NodeHandle>().Init(Nodes[id], col);
+                        }
+                    }
                 }
+                else if (type == "camera")
+                {
+                    var view = go.AddComponent<CameraView>();
+                    view.Init(n.Value<float?>("focal_mm") ?? 65f, n.Value<float?>("frame_width_mm") ?? 36f, n.Value<float?>("aspect") ?? 1.777f);
+                    go.AddComponent<NodeHandle>().Init(Nodes[id], go.transform.Find("body").GetComponent<Collider>());
+                }
+                else if (type == "light")
+                {
+                    go.AddComponent<LightGizmo>().Init(n.Value<string>("kind") ?? "light", n.Value<float?>("intensity") ?? 1f);
+                    go.AddComponent<NodeHandle>().Init(Nodes[id], go.transform.Find("body").GetComponent<Collider>());
+                }
+
+                // A prop parented to a bone (held in a hand) follows that bone.
+                var parentBone = n.Value<string>("parent_bone");
+                var parentNode = n.Value<string>("parent");
+                if (parentBone != null && parentNode != null && figures.TryGetValue(parentNode, out var pf) && pf.ByName.TryGetValue(parentBone, out var bi))
+                    go.transform.SetParent(pf.Bones[bi], true);
             }
 
             Busy = false;
@@ -314,6 +362,29 @@ namespace DazVrBridge
                        * Quaternion.Inverse(DazSpace.Rot(fig.BoneJson[boneIndex]["orient"]));
             // RotFromDazWorld is (x, y, -z, w) and is its own inverse.
             return new[] { wUnity.x, wUnity.y, -wUnity.z, wUnity.w };
+        }
+
+        // node.state -> place a node from its Daz world transform (and lens for cameras).
+        public void ApplyNodeState(LoadedNode node, JObject transform, double? focalMm)
+        {
+            var root = _root.transform;
+            node.Go.transform.position = root.TransformPoint(DazSpace.Pos(transform["pos"]));
+            node.Go.transform.rotation = root.rotation * DazSpace.RotFromDazWorld(transform["rot"]);
+            if (node.Go.transform.parent == root) node.Go.transform.localScale = DazSpace.Scale(transform["scale"]);
+            if (focalMm.HasValue)
+            {
+                var view = node.Go.GetComponent<CameraView>();
+                if (view) view.SetFocal((float)focalMm.Value);
+            }
+        }
+
+        // A node's current world transform as Daz world pos (cm) and rot (Daz sense).
+        public (float[] pos, float[] rot) DazWorldTransformOf(Transform t)
+        {
+            var root = _root.transform;
+            var pos = DazSpace.ToDazPos(root.InverseTransformPoint(t.position));
+            var q = Quaternion.Inverse(root.rotation) * t.rotation;
+            return (pos, new[] { q.x, q.y, -q.z, q.w }); // inverse of RotFromDazWorld
         }
 
         public static int BoneDepth(LoadedFigure fig, int i)

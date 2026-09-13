@@ -70,6 +70,7 @@ Server::Server( QObject* parent ) :
 	// Desk-side pose edits -> pose.state to every control connection.
 	m_poseWatcher = new PoseWatcher( this );
 	connect( m_poseWatcher, &PoseWatcher::figureChanged, this, &Server::onFigureChanged );
+	connect( m_poseWatcher, &PoseWatcher::nodeChanged, this, &Server::onNodeChanged );
 	m_poseWatcher->rescan();
 }
 
@@ -271,10 +272,9 @@ void Server::handleFrame( Connection &c, const Frame &f )
 		return;
 	}
 
-	// Phase 3+ : scene editing
 	if ( type == "node.transform" || type == "camera.set" )
 	{
-		sendError( c, f, "not_implemented", type % " arrives in Phase 3" );
+		handleNodeTransform( c, f );
 		return;
 	}
 
@@ -515,6 +515,41 @@ void Server::handleSelfTestBegin( Connection &c, const Frame &f )
 	send( c.socket, h );
 
 	log( QString( "Self-test started on %1 (%2 bones)" ).arg( figure->getLabel() ).arg( m_selfTest.rotDeg.size() ) );
+}
+
+void Server::handleNodeTransform( Connection &c, const Frame &f )
+{
+	if ( c.role != "control" )
+	{
+		sendError( c, f, "wrong_connection", f.type() % " belongs on the control connection" );
+		return;
+	}
+
+	const bool commit = f.header.value( "commit" ).toBool( true );
+	const QString label = f.header.value( "label" ).toString( "VR move" );
+	const CommitResult r = applyNodeTransform( f.header, commit ? label : QString() );
+	if ( !r.ok )
+	{
+		sendError( c, f, "commit_failed", r.error );
+		return;
+	}
+	if ( commit )
+	{
+		log( QString( "Moved node (\"%1\")" ).arg( label ) );
+	}
+	// The watcher broadcasts node.state ~100 ms later as confirmation.
+}
+
+void Server::onNodeChanged( DzNode* node )
+{
+	if ( m_connections.isEmpty() )
+	{
+		return;
+	}
+	QJsonObject h = nodeStateFor( node );
+	h[ "t" ] = "node.state";
+	h[ "seq" ] = m_seq++;
+	broadcastControl( h );
 }
 
 void Server::onFigureChanged( DzSkeleton* figure )

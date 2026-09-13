@@ -70,7 +70,9 @@ private:
 	void	handleAssetRequest( Connection &c, const Frame &f );
 	void	handlePoseCommit( Connection &c, const Frame &f );
 	void	handleSelfTestBegin( Connection &c, const Frame &f );
+	void	handleNodeTransform( Connection &c, const Frame &f );
 	void	onFigureChanged( DzSkeleton* figure );
+	void	onNodeChanged( DzNode* node );
 
 	void	send( QTcpSocket* socket, const QJsonObject &header, const QByteArray &payload = QByteArray() );
 	void	sendError( Connection &c, const Frame &ref, const QString &code, const QString &msg );

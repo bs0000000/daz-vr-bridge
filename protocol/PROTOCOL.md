@@ -44,8 +44,8 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `pose.commit` | control | `figure, bones: [[id, x, y, z, w], …], label, selftest?` — each bone's target **world** rotation in Daz's quaternion sense; applied parents-first via `DzNode::setWSRot` as one undo step named `label`. Confirmation is the `pose.state` that follows (~100 ms), carrying whatever limits clamped. | **Phase 2a ✓** |
 | `selftest.begin` | control | `figure` | **Phase 2a ✓** — plugin snapshots the figure's Euler controls and sends a `pose.state` with `selftest: true`; the client echoes it as `pose.commit {selftest: true}`; plugin applies it without undo, compares, restores, answers `selftest.result`. |
 | `select` | control | `node, bone?` | Phase 4 |
-| `node.transform` | control | `node, pos, rot, scale, commit` | Phase 3 |
-| `camera.set` | control | `camera, pos, rot, focal_mm, commit` | Phase 3 |
+| `node.transform` | control | `node, pos[3] cm, rot[4] (Daz sense, world), commit, label` — applied via `setWSPos`/`setWSRot`; scale untouched; `commit:false` applies without an undo entry. Not for bones. | **Phase 3 ✓** |
+| `camera.set` | control | `camera, pos, rot, focal_mm, commit, label` — as above plus `setFocalLength` | **Phase 3 ✓** |
 | `pose.preview` | control | `figure, bones` | **reserved, v2** — v1 plugin answers `error deferred_v2` |
 
 ## Messages · plugin → client
@@ -61,7 +61,7 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `asset.data` | bulk | `hash, kind, size` + payload | **Phase 1b ✓** (unknown hash → `error asset_unknown` with `hash`) |
 | `pose.state` | control | `figure, bones: [ { id, ws: { pos, rot } } ], selftest?` — every bone's Daz world transform. Sent whenever any bone of that figure moves (debounced 100 ms), after a `pose.commit`, and for `selftest.begin`. | **Phase 2a ✓** |
 | `selftest.result` | control | `figure, pass, bones, max_error_deg, worst, error?` | **Phase 2a ✓** (pass = every Euler control back within 0.01°) |
-| `node.state` | control | `node, pos, rot, scale` | Phase 3 |
+| `node.state` | control | `node, transform: { pos, rot, scale }, focal_mm?` — any prop/camera/light moved at the desk (debounced 100 ms) and the confirmation after `node.transform`/`camera.set` | **Phase 3 ✓** |
 
 ## Manifest (`scene.manifest.manifest`)
 

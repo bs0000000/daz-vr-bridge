@@ -8,6 +8,7 @@
 #include <QTimer>
 
 #include "dzbone.h"
+#include "dzcamera.h"
 #include "dzfloatproperty.h"
 #include "dzmatrix3.h"
 #include "dznode.h"
@@ -167,6 +168,93 @@ CommitResult applyPoseCommit( const QJsonObject &header, const QString &undoCapt
 }
 
 //////////////////////////////////////////////////////////////////////////
+// node.transform / camera.set / node.state
+
+CommitResult applyNodeTransform( const QJsonObject &header, const QString &undoCaption )
+{
+	CommitResult r;
+
+	const QString id = header.contains( "camera" ) ? header.value( "camera" ).toString() : header.value( "node" ).toString();
+	DzNode* node = findNodeById( id );
+	if ( !node )
+	{
+		r.error = "node not found: " % id;
+		return r;
+	}
+	if ( qobject_cast<DzBone*>( node ) )
+	{
+		r.error = "bones are posed with pose.commit, not node.transform";
+		return r;
+	}
+
+	const QJsonArray p = header.value( "pos" ).toArray();
+	const QJsonArray q = header.value( "rot" ).toArray();
+	if ( p.size() != 3 || q.size() != 4 )
+	{
+		r.error = "pos must be [x, y, z] and rot [x, y, z, w]";
+		return r;
+	}
+	const DzVec3 pos( float( p[0].toDouble() ), float( p[1].toDouble() ), float( p[2].toDouble() ) );
+	DzQuat rot;
+	rot.m_x = q[0].toDouble();
+	rot.m_y = q[1].toDouble();
+	rot.m_z = q[2].toDouble();
+	rot.m_w = q[3].toDouble();
+
+	DzCamera* camera = qobject_cast<DzCamera*>( node );
+	const bool hasFocal = camera && header.contains( "focal_mm" );
+	const double focal = header.value( "focal_mm" ).toDouble();
+
+	auto apply = [&]()
+	{
+		node->setWSPos( pos );
+		node->setWSRot( rot );
+		if ( hasFocal )
+		{
+			camera->setFocalLength( focal );
+		}
+	};
+
+	if ( undoCaption.isEmpty() )
+	{
+		DzUndoStackLock lock;
+		apply();
+	}
+	else
+	{
+		DzUndoStackHold hold;
+		apply();
+		hold.accept( undoCaption );
+	}
+
+	r.ok = true;
+	r.applied = 1;
+	return r;
+}
+
+QJsonObject nodeStateFor( DzNode* node )
+{
+	DzVec3 pos;
+	DzQuat rot;
+	DzMatrix3 scale;
+	node->getWSTransform( pos, rot, scale );
+
+	QJsonObject t;
+	t[ "pos" ] = jsonVec3( pos );
+	t[ "rot" ] = jsonQuat( rot );
+	t[ "scale" ] = QJsonArray{ double( scale[0][0] ), double( scale[1][1] ), double( scale[2][2] ) };
+
+	QJsonObject s;
+	s[ "node" ] = nodeIdOf( node );
+	s[ "transform" ] = t;
+	if ( const DzCamera* camera = qobject_cast<const DzCamera*>( node ) )
+	{
+		s[ "focal_mm" ] = camera->getFocalLength();
+	}
+	return s;
+}
+
+//////////////////////////////////////////////////////////////////////////
 // self-test
 
 EulerSnapshot snapshotEulers( DzSkeleton* figure )
@@ -257,10 +345,25 @@ PoseWatcher::PoseWatcher( QObject* parent ) :
 	connect( dzScene, &DzScene::sceneLoaded, this, &PoseWatcher::rescan );
 	connect( dzScene, &DzScene::sceneCleared, this, &PoseWatcher::rescan );
 	connect( dzScene, &DzScene::skeletonListChanged, this, &PoseWatcher::rescan );
+	connect( dzScene, &DzScene::nodeListChanged, this, &PoseWatcher::rescan );
 }
 
 void PoseWatcher::rescan()
 {
+	// Props, cameras, lights: their own transform is the whole story.
+	const int nodes = dzScene->getNumNodes();
+	for ( int i = 0; i < nodes; ++i )
+	{
+		DzNode* node = dzScene->getNode( i );
+		if ( !node || qobject_cast<DzBone*>( node ) || qobject_cast<DzSkeleton*>( node ) || m_watched.contains( node ) )
+		{
+			continue;
+		}
+		m_watched.insert( node );
+		connect( node, &DzNode::transformChanged, this, [this, node]() { onNodeTransformChanged( node ); } );
+		connect( node, &QObject::destroyed, this, [this, node]() { m_watched.remove( node ); m_dirtyNodes.remove( node ); } );
+	}
+
 	const int count = dzScene->getNumSkeletons();
 	for ( int i = 0; i < count; ++i )
 	{
@@ -295,6 +398,7 @@ void PoseWatcher::setSuppressed( bool on )
 	if ( on )
 	{
 		m_dirty.clear();
+		m_dirtyNodes.clear();
 		m_timer->stop();
 	}
 }
@@ -309,13 +413,29 @@ void PoseWatcher::onTransformChanged( DzSkeleton* figure )
 	m_timer->start();
 }
 
+void PoseWatcher::onNodeTransformChanged( DzNode* node )
+{
+	if ( m_suppressed )
+	{
+		return;
+	}
+	m_dirtyNodes.insert( node );
+	m_timer->start();
+}
+
 void PoseWatcher::flush()
 {
 	const QSet<DzSkeleton*> dirty = m_dirty;
+	const QSet<DzNode*> dirtyNodes = m_dirtyNodes;
 	m_dirty.clear();
+	m_dirtyNodes.clear();
 	for ( DzSkeleton* figure : dirty )
 	{
 		emit figureChanged( figure );
+	}
+	for ( DzNode* node : dirtyNodes )
+	{
+		emit nodeChanged( node );
 	}
 }
 

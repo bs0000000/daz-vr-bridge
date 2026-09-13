@@ -41,6 +41,14 @@ struct CommitResult
 // onto the undo stack (used by the self-test); otherwise one entry is created.
 CommitResult	applyPoseCommit( const QJsonObject &header, const QString &undoCaption );
 
+// Applies a node.transform / camera.set header: world position and rotation
+// (Daz quaternion sense); scale untouched. Cameras also take focal_mm.
+// Empty undoCaption = no undo entry (preview).
+CommitResult	applyNodeTransform( const QJsonObject &header, const QString &undoCaption );
+
+// node.state payload: { node, transform: { pos, rot, scale } } (+ focal_mm for cameras)
+QJsonObject	nodeStateFor( DzNode* node );
+
 // Self-test bookkeeping: Euler snapshot of a figure, compared after the echo.
 struct EulerSnapshot
 {
@@ -53,28 +61,32 @@ void			restoreEulers( const EulerSnapshot &snap );
 // Compares the figure's current Eulers to the snapshot. Returns max abs error in degrees.
 double			compareEulers( const EulerSnapshot &snap, QString* worstBone );
 
-// Watches every bone of every figure in the scene and reports (debounced)
-// which figures changed, so the server can broadcast pose.state.
+// Watches every bone of every figure (-> figureChanged, for pose.state) and
+// every prop/camera/light node (-> nodeChanged, for node.state), debounced,
+// so the server can broadcast desk-side edits.
 class PoseWatcher : public QObject
 {
 	Q_OBJECT
 public:
 	explicit PoseWatcher( QObject* parent = nullptr );
 
-	// (Re)connect to the current scene's figures. Cheap to call repeatedly.
+	// (Re)connect to the current scene. Cheap to call repeatedly.
 	void	rescan();
 	// While suppressed, changes are swallowed (bake freeze, commit application).
 	void	setSuppressed( bool on );
 
 Q_SIGNALS:
 	void	figureChanged( DzSkeleton* figure );
+	void	nodeChanged( DzNode* node );
 
 private:
 	void	onTransformChanged( DzSkeleton* figure );
+	void	onNodeTransformChanged( DzNode* node );
 	void	flush();
 
 	QSet<DzNode*>			m_watched;
 	QSet<DzSkeleton*>		m_dirty;
+	QSet<DzNode*>			m_dirtyNodes;
 	QTimer*					m_timer = nullptr;
 	bool					m_suppressed = false;
 };

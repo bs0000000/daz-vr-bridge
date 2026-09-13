@@ -31,8 +31,10 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 - [x] **0 · Wire** — plugin pane + TCP server; hello/welcome, ping/pong, scene.changed. Client HUD shows the open scene.
 - [x] **1a · Manifest** — node graph + full skeletons (rotation orders, limits, figure-space rest frames). Real Genesis 9 rig profile.
 - [x] **1b · Meshes** — zero-pose bake, content-addressed mesh/skin/material assets over the bulk connection, skinned figures in Unity posed from Daz world transforms.
-- [ ] **2a · Round trip** — `pose.commit` (world rotations → `setWSRot`, one undo step), `pose.state` on desk edits, self-test. *Written; verifying.*
-- [ ] 2b · Grab bones in VR (rig profile handles, FK)
+- [x] **2a · Round trip** — `pose.commit` (world rotations → `setWSRot`, one undo step), `pose.state` on desk edits, self-test passes at 0.01°.
+- [x] **2b · Grab bones in VR** — self-contained tracked hands, handles from the rig profile (mid-bone spheres, waist ring for the root), aim-based drag with twist, overlay drawing, distance fade.
+- [ ] **3 · Whole scene** — props/cameras/lights grabbable and synced both ways; camera frustum + picture-in-picture. *Written; verifying.*
+- [ ] 4 · Posing UX (IK, snapping, mirror, world scale)
 - [ ] 2 · Round trip
 - [ ] 3 · Whole scene
 - [ ] 4 · Posing UX
