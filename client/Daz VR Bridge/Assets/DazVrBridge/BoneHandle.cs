@@ -35,7 +35,7 @@ namespace DazVrBridge
             vis.name = "vis";
             Destroy(vis.GetComponent<Collider>());
             vis.transform.SetParent(transform, false);
-            vis.transform.localScale = Vector3.one * radius * 1.2f;
+            vis.transform.localScale = Vector3.one * radius * 2f; // primitive sphere scale is its diameter
             _renderer = vis.GetComponent<Renderer>();
             _renderer.sharedMaterial = HandleMaterial();
             SetState(State.Idle);

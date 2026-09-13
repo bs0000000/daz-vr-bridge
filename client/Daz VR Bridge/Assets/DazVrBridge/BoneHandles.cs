@@ -10,7 +10,7 @@ namespace DazVrBridge
     {
         public SceneLoader loader;
         [Tooltip("Grab sphere radius in meters.")]
-        public float handleRadius = 0.035f;
+        public float handleRadius = 0.04f;
         public bool showHandles = true;
 
         public readonly List<BoneHandle> All = new List<BoneHandle>();
