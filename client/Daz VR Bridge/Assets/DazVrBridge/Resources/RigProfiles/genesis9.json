@@ -3,8 +3,13 @@
   "rig": "genesis9",
   "root": "hip",
 
+  "_forward_comment": "Direction the figure faces, in Daz figure space. Verified from l_foot: the toes (end) sit at +Z from the ankle (origin).",
+  "forward_daz": [0, 0, 1],
+
+  "_chains_comment": "ik: true makes the chain's last bone an IK effector (grab it and the two bones above solve). Chains without it are reference only.",
   "chains": {
     "l_arm": {
+      "ik": true,
       "bones": ["l_upperarm", "l_forearm", "l_hand"],
       "hinge": { "l_forearm": "y" },
       "twist": {
@@ -14,6 +19,7 @@
       "pole": "back"
     },
     "r_arm": {
+      "ik": true,
       "bones": ["r_upperarm", "r_forearm", "r_hand"],
       "hinge": { "r_forearm": "y" },
       "twist": {
@@ -23,12 +29,14 @@
       "pole": "back"
     },
     "l_leg": {
+      "ik": true,
       "bones": ["l_thigh", "l_shin", "l_foot"],
       "hinge": { "l_shin": "x" },
       "twist": { "l_thigh": ["l_thightwist1", "l_thightwist2"] },
       "pole": "front"
     },
     "r_leg": {
+      "ik": true,
       "bones": ["r_thigh", "r_shin", "r_foot"],
       "hinge": { "r_shin": "x" },
       "twist": { "r_thigh": ["r_thightwist1", "r_thightwist2"] },

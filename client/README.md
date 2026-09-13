@@ -57,9 +57,23 @@ No XR Interaction Toolkit rig needed. Two components:
 
 Handles sit at the middle of each bone segment and draw *through* the body (so the spine
 handles are visible), fading in as a controller comes within 30 cm and fully visible
-under 10 cm (`BoneHandles` → Show/Full Distance). The root bone (hip) is an orange
-**ring around the waist** instead of a sphere: grab it anywhere to turn the whole figure
-about the hip. Controllers also draw through the body. Hover a handle (yellow), squeeze the
+under 10 cm (`BoneHandles` → Show/Full Distance). Three kinds, by color:
+
+| Handle | Color | Grab behaviour |
+|---|---|---|
+| Bone | blue | FK: the bone swings to follow your hand, children come along |
+| Hand / foot | teal | **IK**: carried rigidly while the limb above solves to reach it |
+| Root (hip) | orange ring at the waist | carries the whole figure, position and rotation |
+
+**IK** (`BoneHandles` → Ik Enabled) comes from the rig profile's chains marked `"ik": true`
+— for Genesis 9 the two arms and two legs. Grab a hand and move it: her hand goes where
+your hand goes and the elbow and shoulder solve analytically to follow. The bend plane you
+posed is preserved, so the elbow stays where you put it; when the limb is straight (no
+plane to preserve) the profile's `pole` decides — elbows back, knees front. Out of reach,
+the limb straightens and points at your hand. The joint can never invert. Daz's joint
+limits are applied on commit, so the pose may settle slightly when you let go.
+
+Controllers also draw through the body. Hover a handle (yellow), squeeze the
 **trigger** (green) and move your hand: the bone swings about its joint to keep pointing at
 your hand, so dragging the forearm drags the forearm; roll the controller to twist the
 bone about its axis. Children follow as a chain (this is FK — placing a hand somewhere
@@ -121,7 +135,8 @@ hand "(imu)".
 | `AssetCache.cs` | Content-addressed disk cache with SHA-1 verification. |
 | `SceneLoader.cs` | manifest → GameObjects; skeletons at bind pose, skinned meshes, materials; `ApplyWorldPose` / `DazWorldRotOf` for the pose round trip. |
 | `PoseSync.cs` | `pose.state` in, `pose.commit` out, self-test; keyboard triggers for editor testing. |
-| `RigProfile.cs` | Loads `Resources/RigProfiles/<rig>.json`: grabbable/hidden bones, chains, mirror prefixes. |
+| `RigProfile.cs` | Loads `Resources/RigProfiles/<rig>.json`: grabbable/hidden bones, IK chains, facing direction, mirror prefixes. |
+| `TwoBoneIk.cs` | Analytic two-bone solver (law of cosines) with bend-plane preservation. |
 | `BoneHandle.cs` / `BoneHandles.cs` | Grab spheres on grabbable bones, spawned per figure after load. |
 | `VrHand.cs` / `VrRig.cs` | Tracked controllers from the Input System; hover/trigger grab of any `IGrabbable`. |
 | `IGrabbable.cs` / `NodeHandle.cs` | The grab contract; rigid grab-and-move for props, cameras, lights. |

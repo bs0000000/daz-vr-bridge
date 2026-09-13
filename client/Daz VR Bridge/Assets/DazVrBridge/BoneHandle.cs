@@ -36,10 +36,19 @@ namespace DazVrBridge
         Vector3 _dir0;          // bone origin -> hand at grab time (world)
         Quaternion _boneRot0;   // bone world rotation at grab time
         Quaternion _handRot0;   // hand world rotation at grab time
-        Vector3 _offsetPos;     // ring: bone position in hand space at grab time
-        Quaternion _offsetRot;  // ring: bone rotation relative to the hand at grab time
+        Vector3 _offsetPos;     // ring/IK: bone position in hand space at grab time
+        Quaternion _offsetRot;  // ring/IK: bone rotation relative to the hand at grab time
+
+        // IK: set when this bone ends a chain in the rig profile. Grabbing it carries the
+        // bone rigidly (like the ring) while the two bones above solve to follow.
+        IkChain _ik;
+        RigProfile _profile;
+        int _ikRoot, _ikMid;
+        Vector3 _bendHint;
+
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
+        static readonly Color IkColor = new Color(0.3f, 0.8f, 0.85f, 1f);
         static readonly Color HoverColor = new Color(1.0f, 0.85f, 0.2f, 1f);
         static readonly Color GrabbedColor = new Color(0.3f, 1.0f, 0.4f, 1f);
 
@@ -111,6 +120,19 @@ namespace DazVrBridge
             BoneId = figure.BoneJson[boneIndex].Value<string>("id");
         }
 
+        // Makes this handle an IK effector. Both parent bones must exist on the figure.
+        public bool SetIkChain(RigProfile profile, IkChain chain)
+        {
+            if (!figureHas(chain.Root, out _ikRoot) || !figureHas(chain.Mid, out _ikMid)) return false;
+            _profile = profile;
+            _ik = chain;
+            _idleColor = IkColor;
+            SetState(Current);
+            return true;
+
+            bool figureHas(string id, out int index) => Figure.ByName.TryGetValue(id, out index);
+        }
+
         // Distance from a world point to the grabbable surface's center line:
         // the sphere center, or the nearest point on the ring circle.
         public float DistanceTo(Vector3 world)
@@ -143,6 +165,7 @@ namespace DazVrBridge
             _handRot0 = hand.rotation;
             _offsetPos = Quaternion.Inverse(hand.rotation) * (Bone.position - hand.position);
             _offsetRot = Quaternion.Inverse(hand.rotation) * Bone.rotation;
+            _bendHint = Vector3.zero; // the solver seeds it from the limb's current bend
             SetState(State.Grabbed);
             if (!_poseSync) _poseSync = FindAnyObjectByType<PoseSync>();
             _poseSync?.SetGrabbed(Figure.Id, true);
@@ -155,6 +178,16 @@ namespace DazVrBridge
                 // Carry the root: position and rotation follow the hand rigidly.
                 Bone.rotation = hand.rotation * _offsetRot;
                 Bone.position = hand.position + hand.rotation * _offsetPos;
+                return;
+            }
+
+            if (_ik != null)
+            {
+                // Carry the hand/foot; the two bones above solve to reach it.
+                var targetPos = hand.position + hand.rotation * _offsetPos;
+                TwoBoneIk.Solve(Figure.Bones[_ikRoot], Figure.Bones[_ikMid], Bone, targetPos,
+                    _profile.PoleDirection(_ik, Figure.Go.transform), ref _bendHint);
+                Bone.rotation = hand.rotation * _offsetRot;
                 return;
             }
 
@@ -176,7 +209,7 @@ namespace DazVrBridge
         {
             SetState(State.Idle);
             _poseSync?.SetGrabbed(Figure.Id, false);
-            _poseSync?.Commit(Figure, $"VR pose: {BoneId}");
+            _poseSync?.Commit(Figure, _ik != null ? $"VR pose: {_ik.Name}" : $"VR pose: {BoneId}");
         }
 
         // 0 = hidden, 1 = fully visible. Hovered/grabbed handles ignore it.

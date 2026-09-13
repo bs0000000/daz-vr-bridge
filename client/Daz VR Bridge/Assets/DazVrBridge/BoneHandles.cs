@@ -15,6 +15,8 @@ namespace DazVrBridge
         public float rootRingRadius = 0.22f;
         public float rootRingTube = 0.012f;
         public bool showHandles = true;
+        [Tooltip("Hands and feet drag the whole limb (two-bone IK). Off: every handle is plain FK.")]
+        public bool ikEnabled = true;
 
         [Header("Visibility by controller distance")]
         [Tooltip("Handles farther than this from every controller are hidden.")]
@@ -69,6 +71,7 @@ namespace DazVrBridge
             {
                 var profile = RigProfile.Load(fig.Rig);
                 var count = 0;
+                var ik = 0;
                 for (var i = 0; i < fig.Bones.Length; i++)
                 {
                     var id = fig.BoneJson[i].Value<string>("id");
@@ -79,11 +82,12 @@ namespace DazVrBridge
                     var h = go.AddComponent<BoneHandle>();
                     if (id == profile.Root) h.InitRing(fig, i, rootRingRadius, rootRingTube);
                     else h.Init(fig, i, handleRadius);
+                    if (ikEnabled && profile.IkByEndBone.TryGetValue(id, out var chain) && h.SetIkChain(profile, chain)) ik++;
                     go.transform.Find("vis").gameObject.SetActive(showHandles);
                     All.Add(h);
                     count++;
                 }
-                Debug.Log($"[DazVrBridge] {fig.Label}: {count} bone handles ({profile.Rig})");
+                Debug.Log($"[DazVrBridge] {fig.Label}: {count} bone handles, {ik} IK effectors ({profile.Rig})");
             }
         }
     }

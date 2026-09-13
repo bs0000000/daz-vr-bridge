@@ -34,7 +34,7 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 - [x] **2a · Round trip** — `pose.commit` (world rotations → `setWSRot`, one undo step), `pose.state` on desk edits, self-test passes at 0.01°.
 - [x] **2b · Grab bones in VR** — self-contained tracked hands, handles from the rig profile (mid-bone spheres, waist ring for the root), aim-based drag with twist, overlay drawing, distance fade.
 - [x] **3 · Whole scene** — props/cameras/lights grabbable and synced both ways; camera frustum + picture-in-picture at Daz's lens (vertical frame angle, render-settings aspect), oriented from Daz's own focal point and axes.
-- [ ] **4 · Posing UX** — world grab/scale (rig-side) and carrying the figure by its ring *written; verifying*; IK, surface snapping and mirror to come.
+- [ ] **4 · Posing UX** — world grab/scale (rig-side), carrying the figure by its ring, and two-bone IK on arms and legs *written; verifying*; surface snapping and mirror to come.
 - [ ] 2 · Round trip
 - [ ] 3 · Whole scene
 - [ ] 4 · Posing UX
