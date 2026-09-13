@@ -31,8 +31,11 @@ namespace DazVrBridge
 
         public string LastSelfTest { get; private set; } = "";
 
-        // Per figure: each bone's rotation as last confirmed by Daz (pose.state or manifest).
+        // Per figure: each bone's rotation/position as last confirmed by Daz (pose.state or manifest).
         readonly Dictionary<string, Quaternion[]> _known = new Dictionary<string, Quaternion[]>();
+        readonly Dictionary<string, Vector3[]> _knownPos = new Dictionary<string, Vector3[]>();
+        [Tooltip("Minimum position change (meters) for a bone's translation to be committed (root moves).")]
+        public float commitPosThreshold = 0.002f;
 
         // Figures with a bone currently held in VR: incoming pose.state is dropped for
         // them so Daz's last confirmation cannot fight the hand. The commit on release
@@ -118,10 +121,11 @@ namespace DazVrBridge
         public void Commit(SceneLoader.LoadedFigure fig, string label = "VR pose")
         {
             var changed = new List<int>();
-            if (_known.TryGetValue(fig.Id, out var known))
+            if (_known.TryGetValue(fig.Id, out var known) && _knownPos.TryGetValue(fig.Id, out var knownPos))
             {
                 for (var i = 0; i < fig.Bones.Length; i++)
-                    if (Quaternion.Angle(known[i], fig.Bones[i].rotation) > commitThresholdDeg) changed.Add(i);
+                    if (Quaternion.Angle(known[i], fig.Bones[i].rotation) > commitThresholdDeg
+                        || Vector3.Distance(knownPos[i], fig.Bones[i].position) > commitPosThreshold) changed.Add(i);
             }
             else
             {
@@ -140,10 +144,18 @@ namespace DazVrBridge
         void Send(SceneLoader.LoadedFigure fig, List<int> boneIndices, string label, bool selfTest)
         {
             var bones = new JArray();
+            _knownPos.TryGetValue(fig.Id, out var knownPos);
             foreach (var i in boneIndices)
             {
                 var q = loader.DazWorldRotOf(fig, i);
-                bones.Add(new JArray(fig.BoneJson[i].Value<string>("id"), q[0], q[1], q[2], q[3]));
+                var entry = new JArray(fig.BoneJson[i].Value<string>("id"), q[0], q[1], q[2], q[3]);
+                // A bone that moved (the root, carried by its ring) also sends its world position.
+                if (knownPos == null || Vector3.Distance(knownPos[i], fig.Bones[i].position) > commitPosThreshold)
+                {
+                    var p = DazSpace.ToDazPos(loader.Root.InverseTransformPoint(fig.Bones[i].position));
+                    entry.Add(p[0]); entry.Add(p[1]); entry.Add(p[2]);
+                }
+                bones.Add(entry);
             }
             var h = new JObject
             {
@@ -244,14 +256,17 @@ namespace DazVrBridge
         void SnapshotAll()
         {
             _known.Clear();
+            _knownPos.Clear();
             foreach (var fig in loader.Figures.Values) Snapshot(fig);
         }
 
         void Snapshot(SceneLoader.LoadedFigure fig)
         {
             var q = new Quaternion[fig.Bones.Length];
-            for (var i = 0; i < q.Length; i++) q[i] = fig.Bones[i].rotation;
+            var p = new Vector3[fig.Bones.Length];
+            for (var i = 0; i < q.Length; i++) { q[i] = fig.Bones[i].rotation; p[i] = fig.Bones[i].position; }
             _known[fig.Id] = q;
+            _knownPos[fig.Id] = p;
         }
     }
 }

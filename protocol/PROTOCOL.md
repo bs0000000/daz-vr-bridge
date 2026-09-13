@@ -41,7 +41,7 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `ping` | control | — | **Phase 0 ✓** |
 | `scene.request` | control | `textures: none\|opacity\|full, tex_max, influences: 4\|8, include_hidden, meshes` | **Phase 1b ✓** |
 | `asset.request` | bulk | `hashes: [...]` | **Phase 1b ✓** |
-| `pose.commit` | control | `figure, bones: [[id, x, y, z, w], …], label, selftest?` — each bone's target **world** rotation in Daz's quaternion sense; applied parents-first via `DzNode::setWSRot` as one undo step named `label`. Confirmation is the `pose.state` that follows (~100 ms), carrying whatever limits clamped. | **Phase 2a ✓** |
+| `pose.commit` | control | `figure, bones: [[id, x, y, z, w] or [id, x, y, z, w, px, py, pz], …], label, selftest?` — each bone's target **world** rotation in Daz's quaternion sense, optionally with a world position in cm (the root carried by its ring; Daz stores it as the bone's translation via `setWSPos`); applied parents-first via `DzNode::setWSRot` as one undo step named `label`. Confirmation is the `pose.state` that follows (~100 ms), carrying whatever limits clamped. | **Phase 2a ✓** (position: Phase 4) |
 | `selftest.begin` | control | `figure` | **Phase 2a ✓** — plugin snapshots the figure's Euler controls and sends a `pose.state` with `selftest: true`; the client echoes it as `pose.commit {selftest: true}`; plugin applies it without undo, compares, restores, answers `selftest.result`. |
 | `select` | control | `node, bone?` | Phase 4 |
 | `node.transform` | control | `node, pos[3] cm, rot[4] (Daz sense, world), commit, label` — applied via `setWSPos`/`setWSRot`; scale untouched; `commit:false` applies without an undo entry. Not for bones. | **Phase 3 ✓** |

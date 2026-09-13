@@ -44,6 +44,8 @@ namespace DazVrBridge
             if (_rig && _rig.Left && _rig.Left.IsTracked) { l = _rig.Left.transform.position; hands++; }
             if (_rig && _rig.Right && _rig.Right.IsTracked) { r = _rig.Right.transform.position; hands++; }
 
+            // Reveal distances are physical (arm's reach); scale them with the rig.
+            var s = _rig ? _rig.Scale : 1f;
             foreach (var h in All)
             {
                 if (!h) continue;
@@ -51,7 +53,7 @@ namespace DazVrBridge
                 var d = float.MaxValue;
                 if (_rig.Left && _rig.Left.IsTracked) d = Mathf.Min(d, h.DistanceTo(l));
                 if (_rig.Right && _rig.Right.IsTracked) d = Mathf.Min(d, h.DistanceTo(r));
-                h.SetVisibility(1f - Mathf.InverseLerp(fullDistance, showDistance, d));
+                h.SetVisibility(1f - Mathf.InverseLerp(fullDistance * s, showDistance * s, d));
             }
         }
 

@@ -27,8 +27,11 @@ namespace DazVrBridge
 
         public bool IsTracked { get; private set; }
         public string DeviceName { get; private set; } = "";
+        // The other button (grip when trigger grabs bones): held to grab the world.
+        public bool WorldGrab => IsTracked && _world.IsPressed();
+        public bool HoldingSomething => _grabbed != null;
 
-        InputAction _position, _rotation, _grab, _isTracked;
+        InputAction _position, _rotation, _grab, _world, _isTracked;
         GameObject _vis;
 
         IGrabbable _hover;
@@ -43,7 +46,9 @@ namespace DazVrBridge
             _rotation = new InputAction($"{hand}/rotation", binding: $"<XRController>{{{hand}}}/deviceRotation");
             _isTracked = new InputAction($"{hand}/isTracked", InputActionType.Button, $"<XRController>{{{hand}}}/isTracked");
             var button = grabButton == GrabButton.Trigger ? "triggerPressed" : "gripPressed";
+            var other = grabButton == GrabButton.Trigger ? "gripPressed" : "triggerPressed";
             _grab = new InputAction($"{hand}/grab", InputActionType.Button, $"<XRController>{{{hand}}}/{button}");
+            _world = new InputAction($"{hand}/world", InputActionType.Button, $"<XRController>{{{hand}}}/{other}");
 
             // A visible controller: a small elongated box, shown only while tracked,
             // drawn through the body (overlay) so it never vanishes inside a limb.
@@ -64,12 +69,12 @@ namespace DazVrBridge
 
         void OnEnable()
         {
-            _position.Enable(); _rotation.Enable(); _grab.Enable(); _isTracked.Enable();
+            _position.Enable(); _rotation.Enable(); _grab.Enable(); _world.Enable(); _isTracked.Enable();
         }
 
         void OnDisable()
         {
-            _position.Disable(); _rotation.Disable(); _grab.Disable(); _isTracked.Disable();
+            _position.Disable(); _rotation.Disable(); _grab.Disable(); _world.Disable(); _isTracked.Disable();
         }
 
         void Update()
@@ -94,7 +99,7 @@ namespace DazVrBridge
                 return;
             }
 
-            if (!IsTracked) { ClearHover(); return; }
+            if (!IsTracked || WorldGrab) { ClearHover(); return; } // world grab has priority
             UpdateHover();
             if (_hover != null && _grab.WasPressedThisFrame()) Grab(_hover);
         }
@@ -103,7 +108,9 @@ namespace DazVrBridge
         {
             IGrabbable best = null;
             var bestDist = float.MaxValue;
-            var n = Physics.OverlapSphereNonAlloc(transform.position, grabRadius, _overlap, ~0, QueryTriggerInteraction.Collide);
+            // Reach is a physical distance: scale it with the rig so a giant still reaches.
+            var reach = grabRadius * transform.lossyScale.x;
+            var n = Physics.OverlapSphereNonAlloc(transform.position, reach, _overlap, ~0, QueryTriggerInteraction.Collide);
             for (var i = 0; i < n; i++)
             {
                 var g = _overlap[i].GetComponentInParent<IGrabbable>(); // ring/body colliders are children

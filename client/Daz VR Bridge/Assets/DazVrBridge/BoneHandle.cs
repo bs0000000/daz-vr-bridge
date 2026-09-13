@@ -29,11 +29,14 @@ namespace DazVrBridge
         float _ringRadius;
         static PoseSync _poseSync;
 
-        // Grab state (aim-based FK): the bone swings about its origin so the segment
-        // keeps pointing at the hand; the hand's roll about that axis twists the bone.
+        // Grab state. Spheres (aim-based FK): the bone swings about its origin so the
+        // segment keeps pointing at the hand; the hand's roll about that axis twists the
+        // bone. The ring (root): rigid follow, so the whole figure can be carried.
         Vector3 _dir0;          // bone origin -> hand at grab time (world)
         Quaternion _boneRot0;   // bone world rotation at grab time
         Quaternion _handRot0;   // hand world rotation at grab time
+        Vector3 _offsetPos;     // ring: bone position in hand space at grab time
+        Quaternion _offsetRot;  // ring: bone rotation relative to the hand at grab time
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
         static readonly Color HoverColor = new Color(1.0f, 0.85f, 0.2f, 1f);
@@ -137,6 +140,8 @@ namespace DazVrBridge
             _dir0 = hand.position - Bone.position;
             _boneRot0 = Bone.rotation;
             _handRot0 = hand.rotation;
+            _offsetPos = Quaternion.Inverse(hand.rotation) * (Bone.position - hand.position);
+            _offsetRot = Quaternion.Inverse(hand.rotation) * Bone.rotation;
             SetState(State.Grabbed);
             if (!_poseSync) _poseSync = FindAnyObjectByType<PoseSync>();
             _poseSync?.SetGrabbed(Figure.Id, true);
@@ -144,6 +149,14 @@ namespace DazVrBridge
 
         public void UpdateGrab(Transform hand)
         {
+            if (Shape == Kind.Ring)
+            {
+                // Carry the root: position and rotation follow the hand rigidly.
+                Bone.rotation = hand.rotation * _offsetRot;
+                Bone.position = hand.position + hand.rotation * _offsetPos;
+                return;
+            }
+
             var dir = hand.position - Bone.position;
             if (_dir0.sqrMagnitude < 1e-6f || dir.sqrMagnitude < 1e-6f) return;
 

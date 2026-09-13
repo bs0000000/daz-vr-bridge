@@ -67,6 +67,20 @@ with the elbow solving itself is IK, Phase 4). Let go and the figure is committe
 as one undo step named after the bone; Daz's answering `pose.state` snaps anything its
 joint limits clamped. Face, twist and finger bones have no handles by design.
 
+## Moving yourself and the figure (Phase 4, first part)
+
+**World grab** is on the *other* button (grip, when trigger grabs bones). Hold it on one
+hand and drag to move yourself through the scene; hold it on both hands and pull them
+apart or together to scale, or turn them about each other to rotate. It moves and scales
+the **XR rig**, not the Daz scene, so every Daz coordinate stays 1:1: at rig scale 3 you are
+a giant surveying the set and one physical step covers three meters; at 0.3 you are small
+enough to work on fingers. Reach and handle reveal distances scale with the rig. Limits and
+toggles are on `VrRig` (Min/Max Scale, Two Hand Scale/Rotate).
+
+The waist **ring** now carries the figure rigidly (position and rotation) — grab it and walk
+her to the couch. The commit sends the hip's world position along with the rotations, and
+Daz applies it as the hip translation, one undo step.
+
 ## Props, cameras, lights (Phase 3)
 
 Add **NodeSync** to the `Bridge` object. Then:

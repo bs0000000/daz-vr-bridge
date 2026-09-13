@@ -117,16 +117,16 @@ CommitResult applyPoseCommit( const QJsonObject &header, const QString &undoCapt
 		return r;
 	}
 
-	struct Target { DzBone* bone; DzQuat rot; int depth; };
+	struct Target { DzBone* bone; DzQuat rot; bool hasPos; DzVec3 pos; int depth; };
 	QVector<Target> targets;
 
 	const QJsonArray bones = header.value( "bones" ).toArray();
 	for ( const QJsonValue &v : bones )
 	{
 		const QJsonArray e = v.toArray();
-		if ( e.size() != 5 )
+		if ( e.size() != 5 && e.size() != 8 )
 		{
-			r.error = "bone entry must be [id, x, y, z, w]";
+			r.error = "bone entry must be [id, x, y, z, w] or [id, x, y, z, w, px, py, pz]";
 			return r;
 		}
 		DzBone* bone = figure->findBone( e[0].toString() );
@@ -135,12 +135,21 @@ CommitResult applyPoseCommit( const QJsonObject &header, const QString &undoCapt
 			r.error = "unknown bone: " % e[0].toString();
 			return r;
 		}
-		DzQuat q;
-		q.m_x = e[1].toDouble();
-		q.m_y = e[2].toDouble();
-		q.m_z = e[3].toDouble();
-		q.m_w = e[4].toDouble();
-		targets.append( Target{ bone, q, boneDepth( bone ) } );
+		Target t;
+		t.bone = bone;
+		t.rot.m_x = e[1].toDouble();
+		t.rot.m_y = e[2].toDouble();
+		t.rot.m_z = e[3].toDouble();
+		t.rot.m_w = e[4].toDouble();
+		t.hasPos = e.size() == 8;
+		if ( t.hasPos )
+		{
+			// World position (cm): the root carried by its ring; Daz stores it as
+			// the bone's translation.
+			t.pos = DzVec3( float( e[5].toDouble() ), float( e[6].toDouble() ), float( e[7].toDouble() ) );
+		}
+		t.depth = boneDepth( bone );
+		targets.append( t );
 	}
 
 	// Parents first: a child's world rotation only means something once its
@@ -148,21 +157,27 @@ CommitResult applyPoseCommit( const QJsonObject &header, const QString &undoCapt
 	std::stable_sort( targets.begin(), targets.end(),
 		[]( const Target &a, const Target &b ) { return a.depth < b.depth; } );
 
+	auto apply = [&]()
+	{
+		for ( const Target &t : targets )
+		{
+			if ( t.hasPos )
+			{
+				t.bone->setWSPos( t.pos );
+			}
+			t.bone->setWSRot( t.rot );
+		}
+	};
+
 	if ( undoCaption.isEmpty() )
 	{
 		DzUndoStackLock lock;
-		for ( const Target &t : targets )
-		{
-			t.bone->setWSRot( t.rot );
-		}
+		apply();
 	}
 	else
 	{
 		DzUndoStackHold hold;
-		for ( const Target &t : targets )
-		{
-			t.bone->setWSRot( t.rot );
-		}
+		apply();
 		hold.accept( undoCaption );
 	}
 
