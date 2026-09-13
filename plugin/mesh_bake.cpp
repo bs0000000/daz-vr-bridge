@@ -1,6 +1,8 @@
 #include "mesh_bake.h"
 
 #include <algorithm>
+#include <cmath>
+#include <vector>
 
 #include <QDataStream>
 #include <QHash>
@@ -18,8 +20,10 @@
 #include "dzintproperty.h"
 #include "dzmap.h"
 #include "dzmaterial.h"
+#include "dzmatrix3.h"
 #include "dznode.h"
 #include "dzobject.h"
+#include "dzquat.h"
 #include "dzscene.h"
 #include "dzskeleton.h"
 #include "dzskinbinding.h"
@@ -266,9 +270,25 @@ PoseFreeze::~PoseFreeze()
 }
 
 //////////////////////////////////////////////////////////////////////////
+// spaces
+
+DzVec3 worldToNodeLocal( const DzNode* node, const DzVec3 &world )
+{
+	DzVec3 pos;
+	DzQuat rot;
+	DzMatrix3 scale;
+	node->getWSTransform( pos, rot, scale );
+
+	const DzVec3 d( world.m_x - pos.m_x, world.m_y - pos.m_y, world.m_z - pos.m_z );
+	const DzVec3 r = rot.inverse().multVec( d );
+	const float s = scale[0][0] > 1e-6f ? scale[0][0] : 1.0f;
+	return DzVec3( r.m_x / s, r.m_y / s, r.m_z / s );
+}
+
+//////////////////////////////////////////////////////////////////////////
 // bakeNodeMesh
 
-bool bakeNodeMesh( DzNode* node, const QStringList &figureBones, const BakeOptions &opts, MeshChunks &out )
+bool bakeNodeMesh( DzNode* node, const DzNode* space, const QStringList &figureBones, const BakeOptions &opts, MeshChunks &out )
 {
 	DzObject* obj = node->getObject();
 	DzFacetShape* shape = obj ? qobject_cast<DzFacetShape*>( obj->getCurrentShape() ) : nullptr;
@@ -289,12 +309,33 @@ bool bakeNodeMesh( DzNode* node, const QStringList &figureBones, const BakeOptio
 
 	// Positions: deformed (shape morphs applied, pose zeroed by the caller)
 	// when the cache is at base resolution, else the undeformed base mesh.
+	// The cache is WORLD space; bring it into `space`'s local frame so the
+	// client can place the node once. The base mesh is already local.
+	std::vector<float> localized; // DzPnt3 is float[3]; keep a flat buffer
 	const DzPnt3* positions = base->getVerticesPtr();
 	if ( const DzVertexMesh* cached = obj->getCachedGeom() )
 	{
 		if ( cached->getNumVertices() == vertexCount )
 		{
-			positions = cached->getVerticesPtr();
+			const DzPnt3* world = cached->getVerticesPtr();
+			localized.resize( size_t( vertexCount ) * 3 );
+			double dx = 0, dy = 0, dz = 0;
+			for ( int v = 0; v < vertexCount; ++v )
+			{
+				const DzVec3 w( world[ v ][0], world[ v ][1], world[ v ][2] );
+				const DzVec3 l = worldToNodeLocal( space, w );
+				localized[ size_t( v ) * 3 + 0 ] = l.m_x;
+				localized[ size_t( v ) * 3 + 1 ] = l.m_y;
+				localized[ size_t( v ) * 3 + 2 ] = l.m_z;
+				dx += w.m_x - l.m_x; dy += w.m_y - l.m_y; dz += w.m_z - l.m_z;
+			}
+			positions = reinterpret_cast<const DzPnt3*>( localized.data() );
+			const double n = double( vertexCount );
+			if ( std::fabs( dx / n ) + std::fabs( dy / n ) + std::fabs( dz / n ) > 0.5 )
+			{
+				out.warnings << QString( "cached geometry localized by (%1, %2, %3) cm" )
+					.arg( dx / n, 0, 'f', 1 ).arg( dy / n, 0, 'f', 1 ).arg( dz / n, 0, 'f', 1 );
+			}
 		}
 		else
 		{

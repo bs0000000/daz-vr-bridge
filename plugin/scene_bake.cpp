@@ -216,20 +216,6 @@ QJsonObject jsonNode( const DzNode* node, const QString &type, QStringList &bone
 	return n;
 }
 
-// World -> figure-local for a point, from the figure's pos/rot/uniform scale.
-DzVec3 toFigureLocal( const DzSkeleton* figure, const DzVec3 &world )
-{
-	DzVec3 pos;
-	DzQuat rot;
-	DzMatrix3 scale;
-	figure->getWSTransform( pos, rot, scale );
-
-	const DzVec3 d( world.m_x - pos.m_x, world.m_y - pos.m_y, world.m_z - pos.m_z );
-	const DzVec3 r = rot.inverse().multVec( d );
-	const float s = scale[0][0] > 1e-6f ? scale[0][0] : 1.0f;
-	return DzVec3( r.m_x / s, r.m_y / s, r.m_z / s );
-}
-
 // Rewrites each bone's origin/end with the pivot's ACTUAL zero-pose position.
 // Must run inside a PoseFreeze. Daz's getOrigin() is the untranslated center
 // point, but shape morphs can drive bone translations through ERC (a hip lift
@@ -251,7 +237,7 @@ void writeRestPivots( QJsonObject &entry, const DzSkeleton* skel )
 		}
 		const DzVec3 restOrigin = bone->getOrigin( false );
 		const DzVec3 restEnd = bone->getEndPoint( false );
-		const DzVec3 pivot = toFigureLocal( skel, bone->getWSPos() );
+		const DzVec3 pivot = worldToNodeLocal( skel, bone->getWSPos() );
 		const DzVec3 endLocal( pivot.m_x + ( restEnd.m_x - restOrigin.m_x ),
 			pivot.m_y + ( restEnd.m_y - restOrigin.m_y ),
 			pivot.m_z + ( restEnd.m_z - restOrigin.m_z ) );
@@ -290,11 +276,12 @@ void addAsset( BakeResult &result, QJsonObject &node, const QString &key, const 
 }
 
 // Bakes one node's mesh and attaches the asset hashes to its manifest entry.
-void bakeMeshInto( DzNode* node, QJsonObject &entry, const QStringList &figureBones,
+// `space` is the node whose local frame the positions use (see bakeNodeMesh).
+void bakeMeshInto( DzNode* node, const DzNode* space, QJsonObject &entry, const QStringList &figureBones,
 	const BakeOptions &opts, BakeResult &result )
 {
 	MeshChunks chunks;
-	const bool ok = bakeNodeMesh( node, figureBones, opts, chunks );
+	const bool ok = bakeNodeMesh( node, space, figureBones, opts, chunks );
 	for ( const QString &w : chunks.warnings )
 	{
 		result.log << node->getLabel() % ": " % w;
@@ -388,10 +375,12 @@ BakeResult bakeScene( const BakeOptions &opts )
 			}
 			if ( opts.meshes )
 			{
-				bakeMeshInto( figure, fe, bones, opts, result );
+				// Followers are expressed in the figure's space: the client parents
+				// them under the figure and skins them with the figure's bones.
+				bakeMeshInto( figure, figure, fe, bones, opts, result );
 				for ( DzSkeleton* s : followers )
 				{
-					bakeMeshInto( s, followerEntries[ s ], bones, opts, result );
+					bakeMeshInto( s, figure, followerEntries[ s ], bones, opts, result );
 				}
 			}
 		}
@@ -432,7 +421,7 @@ BakeResult bakeScene( const BakeOptions &opts )
 			QJsonObject e = jsonNode( node, type, none );
 			if ( opts.meshes && type == "prop" )
 			{
-				bakeMeshInto( node, e, none, opts, result );
+				bakeMeshInto( node, node, e, none, opts, result );
 			}
 			entries.insert( node, e );
 		}

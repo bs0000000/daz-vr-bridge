@@ -15,6 +15,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include "dzvec3.h"
+
 class DzNode;
 class DzSkeleton;
 
@@ -34,7 +36,13 @@ struct MeshChunks
 
 // figureBones: bone ids of the skeleton the skin indices refer to (the
 // figure's own bones, or the follow target's for a follower). Empty for props.
-bool	bakeNodeMesh( DzNode* node, const QStringList &figureBones, const BakeOptions &opts, MeshChunks &out );
+// space: the node whose local space the positions are expressed in — the node
+// itself for figures and props, the follow target for followers. Daz's cached
+// geometry is world-space; this is what brings it back to node-local.
+bool	bakeNodeMesh( DzNode* node, const DzNode* space, const QStringList &figureBones, const BakeOptions &opts, MeshChunks &out );
+
+// World -> node-local for a point, from the node's world pos/rot/uniform scale.
+DzVec3	worldToNodeLocal( const DzNode* node, const DzVec3 &world );
 
 // Zeroes every bone's rotation/translation on a figure (and drops SubD to
 // level 0 on it and its followers) for the lifetime of the object, without
