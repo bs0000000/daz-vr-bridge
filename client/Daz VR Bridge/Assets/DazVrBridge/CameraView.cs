@@ -4,6 +4,7 @@
 // Z mirror on import turns that into Unity's +Z, so a Camera component on the
 // node with identity local rotation frames the same shot.
 
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace DazVrBridge
@@ -14,10 +15,10 @@ namespace DazVrBridge
         public float FrameWidthMm { get; private set; } = 36f;
         public float Aspect { get; private set; } = 16f / 9f;
         // Daz's getFieldOfView() is 2*atan(frame_width/(2*focal)) in radians, independent
-        // of the render aspect. Daz mimics a 36 mm film width, so that angle is taken as
-        // the HORIZONTAL field of view and the vertical one follows from the aspect.
-        // Flip this if a Daz render shows more/less vertically than the panel.
-        public bool fovIsHorizontal = true;
+        // of the render aspect. Measured against Daz's viewport at 65 mm / 1.667: the
+        // head fills ~31° vertically, so that angle is the VERTICAL field of view and
+        // the horizontal one follows from the aspect. (Portrait renders unverified.)
+        public bool fovIsHorizontal = false;
         public float VerticalFovDeg { get; private set; } = 30f;
 
         public float pipWidth = 0.40f;      // meters
@@ -149,6 +150,20 @@ namespace DazVrBridge
             };
             _frustum.positionCount = pts.Length;
             _frustum.SetPositions(pts);
+        }
+
+        // Orient the camera node from Daz's own view geometry: forward = focal point - position,
+        // up = the Y axis of the camera's world rotation as Daz computes it. Independent of any
+        // assumption about which local axis a Daz camera looks along.
+        public static void OrientFromDaz(Transform camNode, Transform root, JToken lens, JToken position)
+        {
+            var fp = lens["focal_point"];
+            var axes = lens["axes"];
+            if (fp == null || axes == null || position == null) return;
+            var forward = DazSpace.Dir(fp) - DazSpace.Dir(position); // both world Daz -> Unity dir space
+            if (forward.sqrMagnitude < 1e-8f) return;
+            var up = DazSpace.Dir(axes["y"]);
+            camNode.rotation = root.rotation * Quaternion.LookRotation(forward.normalized, up.normalized);
         }
 
         // Where a world point lands in this camera's frame: (0,0) bottom-left, (1,1) top-right,

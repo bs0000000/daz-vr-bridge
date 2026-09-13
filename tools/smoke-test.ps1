@@ -103,6 +103,18 @@ foreach ($fig in $figures) {
 foreach ($cam in @($m.nodes | Where-Object { $_.type -eq "camera" })) {
     $nomH = 2 * [math]::Atan($cam.frame_width_mm / (2 * $cam.focal_mm)) * 180 / [math]::PI
     Write-Host ("camera '{0}': focal={1} mm  frame_w={2} mm  aspect={3:F3} ({4})  Daz getFieldOfView()={5}  (nominal 2*atan(frame/2f) = {6:F2} deg)" -f $cam.label, $cam.focal_mm, $cam.frame_width_mm, $cam.aspect, ($cam.render_px -join "x"), $cam.fov, $nomH)
+    if ($null -ne $cam.focal_point) {
+        $p = @($cam.transform.pos); $fp = @($cam.focal_point)
+        $dir = @(([double]$fp[0] - [double]$p[0]), ([double]$fp[1] - [double]$p[1]), ([double]$fp[2] - [double]$p[2]))
+        $len = [math]::Sqrt(($dir[0] * $dir[0]) + ($dir[1] * $dir[1]) + ($dir[2] * $dir[2]))
+        $dir = @(($dir[0] / $len), ($dir[1] / $len), ($dir[2] / $len))
+        Write-Host ("   pos=({0:F1},{1:F1},{2:F1})  rot_order={3} rot_deg=({4})  view dir (focal_point - pos)=({5:F3},{6:F3},{7:F3})  focal_distance={8:F1}" -f [double]$p[0], [double]$p[1], [double]$p[2], $cam.rot_order, (($cam.rot_deg | ForEach-Object { "{0:F2}" -f $_ }) -join ","), $dir[0], $dir[1], $dir[2], $cam.focal_distance)
+        foreach ($ax in "x", "y", "z") {
+            $a = @($cam.axes.$ax)
+            $dot = ($dir[0] * [double]$a[0]) + ($dir[1] * [double]$a[1]) + ($dir[2] * [double]$a[2])
+            Write-Host ("   axis {0}=({1,6:F3},{2,6:F3},{3,6:F3})  dot(view,axis)={4,6:F3}" -f $ax, [double]$a[0], [double]$a[1], [double]$a[2], $dot)
+        }
+    }
 }
 
 # --- assets over a bulk connection

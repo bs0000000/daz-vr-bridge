@@ -15,6 +15,7 @@
 #include "dznode.h"
 #include "dzrendermgr.h"
 #include "dzrenderoptions.h"
+#include "dzrotationorder.h"
 #include "dzquat.h"
 #include "dzscene.h"
 #include "dzskeleton.h"
@@ -262,6 +263,27 @@ void writeCameraLens( QJsonObject &into, DzCamera* camera )
 	into[ "focal_mm" ] = camera->getFocalLength();
 	into[ "frame_width_mm" ] = camera->getFrameWidth();
 	into[ "fov" ] = camera->getFieldOfView();
+
+	// Daz's own view geometry, so the client never has to guess which local
+	// axis a camera looks along or what its up vector is: the focal point is
+	// straight ahead on the view axis; the axes are Daz's reading of the
+	// camera's world rotation.
+	const DzVec3 focalPoint = camera->getFocalPoint();
+	into[ "focal_point" ] = jsonVec3( focalPoint );
+	into[ "focal_distance" ] = camera->getFocalDistance();
+
+	DzVec3 pos;
+	DzQuat rot;
+	DzMatrix3 scale;
+	camera->getWSTransform( pos, rot, scale );
+	QJsonObject axes;
+	axes[ "x" ] = jsonVec3( rot.getXAxis() );
+	axes[ "y" ] = jsonVec3( rot.getYAxis() );
+	axes[ "z" ] = jsonVec3( rot.getZAxis() );
+	into[ "axes" ] = axes;
+
+	into[ "rot_order" ] = camera->getRotationOrder().toString();
+	into[ "rot_deg" ] = QJsonArray{ propValue( camera->getXRotControl() ), propValue( camera->getYRotControl() ), propValue( camera->getZRotControl() ) };
 
 	double aspect = camera->getAspectRatio();
 	QJsonArray px{ camera->getPixelsWidth(), camera->getPixelsHeight() };

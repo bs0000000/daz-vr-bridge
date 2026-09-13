@@ -253,6 +253,7 @@ namespace DazVrBridge
                 {
                     var view = go.AddComponent<CameraView>();
                     view.Init(n.Value<float?>("focal_mm") ?? 65f, n.Value<float?>("frame_width_mm") ?? 36f, n.Value<float?>("aspect") ?? 1.777f, n.Value<float?>("fov"));
+                    CameraView.OrientFromDaz(go.transform, _root.transform, n, n["transform"]?["pos"]);
                     go.AddComponent<NodeHandle>().Init(Nodes[id], go.transform.Find("body").GetComponent<Collider>());
                 }
                 else if (type == "light")
@@ -375,7 +376,10 @@ namespace DazVrBridge
 
             var view = node.Go.GetComponent<CameraView>();
             if (view && header["focal_mm"] != null)
+            {
                 view.SetLens(header.Value<float>("focal_mm"), header.Value<float?>("frame_width_mm"), header.Value<float?>("aspect"), header.Value<float?>("fov"));
+                CameraView.OrientFromDaz(node.Go.transform, root, header, transform["pos"]);
+            }
         }
 
         // A node's current world transform as Daz world pos (cm) and rot (Daz sense).

@@ -26,6 +26,12 @@ namespace DazVrBridge
             return Pos(arr[0].Value<float>(), arr[1].Value<float>(), arr[2].Value<float>());
         }
 
+        // A direction (no unit scaling), mirrored like positions.
+        public static Vector3 Dir(JToken arr)
+        {
+            return new Vector3(arr[0].Value<float>(), arr[1].Value<float>(), -arr[2].Value<float>());
+        }
+
         public static Vector3 Scale(JToken arr)
         {
             return new Vector3(arr[0].Value<float>(), arr[1].Value<float>(), arr[2].Value<float>());
