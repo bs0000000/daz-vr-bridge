@@ -33,7 +33,7 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 - [x] **1b · Meshes** — zero-pose bake, content-addressed mesh/skin/material assets over the bulk connection, skinned figures in Unity posed from Daz world transforms.
 - [x] **2a · Round trip** — `pose.commit` (world rotations → `setWSRot`, one undo step), `pose.state` on desk edits, self-test passes at 0.01°.
 - [x] **2b · Grab bones in VR** — self-contained tracked hands, handles from the rig profile (mid-bone spheres, waist ring for the root), aim-based drag with twist, overlay drawing, distance fade.
-- [ ] **3 · Whole scene** — props/cameras/lights grabbable and synced both ways; camera frustum + picture-in-picture. *Written; verifying.*
+- [x] **3 · Whole scene** — props/cameras/lights grabbable and synced both ways; camera frustum + picture-in-picture at Daz's lens (vertical frame angle, render-settings aspect), oriented from Daz's own focal point and axes.
 - [ ] 4 · Posing UX (IK, snapping, mirror, world scale)
 - [ ] 2 · Round trip
 - [ ] 3 · Whole scene
