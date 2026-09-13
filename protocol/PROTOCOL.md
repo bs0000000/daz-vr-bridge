@@ -77,7 +77,10 @@ nodes:  [ {
   transform:   { pos[3] cm, rot[4] quat xyzw, scale[3] }   — world space, current pose
   figure/follower: rig ("genesis9" | "genesis8" | …), follower_of, skeleton: { bones: [ {
       id (bone name), label, parent (bone id | null), rot_order ("XYZ"…),
-      origin[3], end[3]   — figure space, this character's shape morphs included
+      origin[3], end[3]   — the pivot's actual ZERO-POSE position, figure space (unscaled),
+                            including any ERC-driven bone translation a shape morph adds
+                            (e.g. a hip lift). This is what the bind mesh was baked against.
+      rest_origin[3]      — Daz's untranslated center point (getOrigin), for reference
       orient[4]           — the bone's frame, ABSOLUTE in figure space (not parent-relative)
       ws: { pos, rot, scale }  — world space, current pose. NOTE: ws.rot is the accumulated
                                  pose rotation and is identity at zero pose; it does not

@@ -216,6 +216,56 @@ QJsonObject jsonNode( const DzNode* node, const QString &type, QStringList &bone
 	return n;
 }
 
+// World -> figure-local for a point, from the figure's pos/rot/uniform scale.
+DzVec3 toFigureLocal( const DzSkeleton* figure, const DzVec3 &world )
+{
+	DzVec3 pos;
+	DzQuat rot;
+	DzMatrix3 scale;
+	figure->getWSTransform( pos, rot, scale );
+
+	const DzVec3 d( world.m_x - pos.m_x, world.m_y - pos.m_y, world.m_z - pos.m_z );
+	const DzVec3 r = rot.inverse().multVec( d );
+	const float s = scale[0][0] > 1e-6f ? scale[0][0] : 1.0f;
+	return DzVec3( r.m_x / s, r.m_y / s, r.m_z / s );
+}
+
+// Rewrites each bone's origin/end with the pivot's ACTUAL zero-pose position.
+// Must run inside a PoseFreeze. Daz's getOrigin() is the untranslated center
+// point, but shape morphs can drive bone translations through ERC (a hip lift
+// keeping longer legs on the floor) that survive zeroing the controls; the
+// zero-pose mesh includes them, so the pivots the client binds to must too.
+void writeRestPivots( QJsonObject &entry, const DzSkeleton* skel )
+{
+	QJsonObject skeleton = entry.value( "skeleton" ).toObject();
+	QJsonArray bones = skeleton.value( "bones" ).toArray();
+	const DzBoneList all = skel->getAllBones();
+
+	for ( int i = 0; i < all.size() && i < bones.size(); ++i )
+	{
+		const DzBone* bone = all[ i ];
+		QJsonObject b = bones[ i ].toObject();
+		if ( b.value( "id" ).toString() != bone->getName() )
+		{
+			continue;
+		}
+		const DzVec3 restOrigin = bone->getOrigin( false );
+		const DzVec3 restEnd = bone->getEndPoint( false );
+		const DzVec3 pivot = toFigureLocal( skel, bone->getWSPos() );
+		const DzVec3 endLocal( pivot.m_x + ( restEnd.m_x - restOrigin.m_x ),
+			pivot.m_y + ( restEnd.m_y - restOrigin.m_y ),
+			pivot.m_z + ( restEnd.m_z - restOrigin.m_z ) );
+
+		b[ "origin" ] = jsonVec3( pivot );
+		b[ "end" ] = jsonVec3( endLocal );
+		b[ "rest_origin" ] = jsonVec3( restOrigin );
+		bones[ i ] = b;
+	}
+
+	skeleton[ "bones" ] = bones;
+	entry[ "skeleton" ] = skeleton;
+}
+
 QString sha1( const QByteArray &bytes )
 {
 	return "sha1:" % QString::fromLatin1( QCryptographicHash::hash( bytes, QCryptographicHash::Sha1 ).toHex() );
@@ -327,15 +377,22 @@ BakeResult bakeScene( const BakeOptions &opts )
 			}
 		}
 
-		// Then the meshes, with the figure (and therefore its followers) at
-		// zero pose so positions are the bind mesh in figure space.
-		if ( opts.meshes )
+		// Then, with the figure (and therefore its followers) at zero pose: the
+		// pivots as they actually are at rest, and the bind meshes in figure space.
 		{
 			PoseFreeze freeze( figure );
-			bakeMeshInto( figure, fe, bones, opts, result );
+			writeRestPivots( fe, figure );
 			for ( DzSkeleton* s : followers )
 			{
-				bakeMeshInto( s, followerEntries[ s ], bones, opts, result );
+				writeRestPivots( followerEntries[ s ], s );
+			}
+			if ( opts.meshes )
+			{
+				bakeMeshInto( figure, fe, bones, opts, result );
+				for ( DzSkeleton* s : followers )
+				{
+					bakeMeshInto( s, followerEntries[ s ], bones, opts, result );
+				}
 			}
 		}
 
