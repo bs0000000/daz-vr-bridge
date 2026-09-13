@@ -22,6 +22,13 @@ namespace DazVrBridge
         public string Shoulder;
         public float ShoulderWeight = 0.4f;
         public float ShoulderMaxDeg = 30f;
+
+        // Roll the middle bone about its own length to keep the end bone's twist inside
+        // its limits. For an arm that is forearm pronation, which is where a real wrist's
+        // twist comes from; rolling about the elbow-to-wrist axis leaves the wrist where
+        // the solve put it.
+        public bool RollAssist;
+        public float RollMaxDeg = 90f;
     }
 
     public sealed class RigProfile
@@ -101,6 +108,8 @@ namespace DazVrBridge
                     };
                     ik.ShoulderWeight = chain.Value<float?>("shoulder_weight") ?? ik.ShoulderWeight;
                     ik.ShoulderMaxDeg = chain.Value<float?>("shoulder_max_deg") ?? ik.ShoulderMaxDeg;
+                    ik.RollAssist = chain.Value<bool?>("roll_assist") ?? false;
+                    ik.RollMaxDeg = chain.Value<float?>("roll_max_deg") ?? ik.RollMaxDeg;
                     p.IkByEndBone[ik.End] = ik;
                 }
             }

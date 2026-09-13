@@ -264,7 +264,58 @@ namespace DazVrBridge
             }
 
             Bone.rotation = targetRot;
-            if (clamping) DazEuler.ClampToLimits(Loader, Figure, BoneIndex);
+
+            // The wrist alone cannot twist far (Daz gives l_hand z +/-70..80); in a real
+            // arm most of that twist is forearm pronation. Rolling the forearm about the
+            // elbow-to-wrist axis moves no joint position, so the solve above still holds.
+            if (clamping && _ik.RollAssist) RollMidBone(targetRot);
+
+            if (clamping)
+            {
+                DazEuler.ClampToLimits(Loader, Figure, _ikMid);
+                DazEuler.ClampToLimits(Loader, Figure, BoneIndex);
+            }
+        }
+
+        // Picks the roll that leaves the least total limit violation on the middle and end
+        // bones: a coarse sweep, then a refinement. The cost is smooth in the roll angle.
+        void RollMidBone(Quaternion targetRot)
+        {
+            var mid = Figure.Bones[_ikMid];
+            var axis = Bone.position - mid.position;
+            if (axis.sqrMagnitude < 1e-8f) return;
+            axis.Normalize();
+
+            var baseRot = mid.rotation;
+            var best = 0f;
+            var bestCost = RollCost(0f, baseRot, axis, targetRot);
+
+            if (bestCost > 0.01f)
+            {
+                var max = _ik.RollMaxDeg;
+                for (var roll = -max; roll <= max; roll += 15f)
+                {
+                    var cost = RollCost(roll, baseRot, axis, targetRot);
+                    if (cost < bestCost - 0.01f) { bestCost = cost; best = roll; }
+                }
+                var coarse = best;
+                for (var d = -12f; d <= 12f; d += 3f)
+                {
+                    var cost = RollCost(coarse + d, baseRot, axis, targetRot);
+                    if (cost < bestCost - 0.01f) { bestCost = cost; best = coarse + d; }
+                }
+            }
+
+            RollCost(best, baseRot, axis, targetRot); // leave the winner applied
+        }
+
+        float RollCost(float roll, Quaternion baseRot, Vector3 axis, Quaternion targetRot)
+        {
+            Figure.Bones[_ikMid].rotation = Quaternion.AngleAxis(roll, axis) * baseRot;
+            Bone.rotation = targetRot;
+            var end = DazEuler.Check(Loader, Figure, BoneIndex);
+            var mid = DazEuler.Check(Loader, Figure, _ikMid);
+            return (end.Valid ? end.Worst : 0f) + (mid.Valid ? mid.Worst : 0f);
         }
 
         // Rotates the clavicle a fraction of the way toward the target before the

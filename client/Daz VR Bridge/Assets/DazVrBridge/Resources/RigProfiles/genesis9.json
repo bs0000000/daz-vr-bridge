@@ -15,6 +15,9 @@
       "shoulder": "l_shoulder",
       "shoulder_weight": 0.4,
       "shoulder_max_deg": 30,
+      "_roll_comment": "l_hand can only twist z[-70,80]; in a real arm the rest is forearm pronation. Rolling l_forearm about the elbow-to-wrist axis moves no joint, so the IK solution still holds. Daz drives the forearm twist bones from this on commit.",
+      "roll_assist": true,
+      "roll_max_deg": 90,
       "hinge": { "l_forearm": "y" },
       "twist": {
         "l_upperarm": ["l_upperarmtwist1", "l_upperarmtwist2"],
@@ -28,6 +31,8 @@
       "shoulder": "r_shoulder",
       "shoulder_weight": 0.4,
       "shoulder_max_deg": 30,
+      "roll_assist": true,
+      "roll_max_deg": 90,
       "hinge": { "r_forearm": "y" },
       "twist": {
         "r_upperarm": ["r_upperarmtwist1", "r_upperarmtwist2"],

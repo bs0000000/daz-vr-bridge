@@ -78,15 +78,27 @@ across the body or down to an armrest is shoulder-girdle motion in a real body, 
 without it the upper arm alone has to swing past its Daz limits, which Daz then corrects
 hard on commit.
 
-**Joint limits** (`BoneHandles` → Show Limits). Daz clamps to its per-bone limits on commit,
-which is what makes a pose settle when you let go. The client now computes each bone's Daz
-X/Y/Z rotation values live and flags the ones outside their range: the handle driving them
-turns **red** (deeper the further past), and the HUD lists them, worst first —
-`l_upperarm y 52° outside [-110, 40]`. So you can see the correction coming and work
-around it instead of being surprised on release. The decomposition is documented in
-`protocol/PROTOCOL.md`; it is verified to 0.00002° against Daz's own values.
+**Joint limits.** Daz enforces per-bone rotation limits, and the upper arm's
+(`y[-110, 40]`) runs out long before the arm runs out of reach. Two features, both on
+`BoneHandles`:
 
-The client does not yet *clamp* to the limits during a drag — it only shows them.
+- **Clamp To Limits** (default on) keeps every joint inside its Daz range *while you drag*
+  and hands the reach the limits refuse to the clavicle: solve, clamp, swing the clavicle
+  to close the gap, solve again (Ik Iterations, default 4). It stops the moment a solve
+  comes back legal, so poses inside the limits behave exactly as before. What you see is
+  what Daz will keep. Turn it off for the old free solve.
+- **Show Limits** (default on) turns a handle **red** when a bone it drives is still past a
+  limit — deeper the further past — and lists them on the HUD worst first,
+  `l_upperarm y 52° outside [-110, 40]`.
+
+Arm chains also set `roll_assist`: the wrist alone can only twist `z[-70, 80]`, so the
+solver rolls the forearm about the elbow-to-wrist axis (which moves no joint, leaving the
+IK solution intact) to find the roll that leaves the least total violation on the forearm
+and hand. That is forearm pronation, which is where a real wrist's twist comes from; Daz
+drives the forearm twist bones from it on commit.
+
+The Euler decomposition behind all of this is documented in `protocol/PROTOCOL.md` and
+verified to 0.00002° against Daz's own values, with the rebuild round-tripping at 6e-8.
 
 Controllers also draw through the body. Hover a handle (yellow), squeeze the
 **trigger** (green) and move your hand: the bone swings about its joint to keep pointing at
