@@ -216,7 +216,7 @@ namespace DazVrBridge
                     sb.Append($"  {id,-11} n={acc.n,5}  bone={p:F3}  centroid={c:F3}  |d|={(c - p).magnitude * 100f:F1} cm  dy={(c - p).y * 100f:F1} cm\n");
                 }
                 // Cameras: where this figure's head and eye land in each camera's frame.
-                foreach (var view in FindObjectsByType<CameraView>(FindObjectsSortMode.None))
+                foreach (var view in FindObjectsByType<CameraView>())
                 {
                     sb.Append($"  camera {view.name}: {view.Describe()}\n");
                     foreach (var id in new[] { "head", "l_eye" })
