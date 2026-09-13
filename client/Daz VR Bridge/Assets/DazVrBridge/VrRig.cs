@@ -17,6 +17,8 @@ namespace DazVrBridge
     {
         public Transform cameraOffset; // defaults to Main Camera's parent
         public VrHand.GrabButton grabButton = VrHand.GrabButton.Trigger;
+        [Tooltip("Move/scale the world. If nothing happens, read the HUD's button monitor and pick what your grip reports as.")]
+        public VrHand.GrabButton worldButton = VrHand.GrabButton.Grip;
         public float grabRadius = 0.06f;
         [Tooltip("SteamVR tracks floor-relative; anything else adds the Camera Y Offset on top and you stand 1 m too tall.")]
         public bool forceFloorTracking = true;
@@ -63,6 +65,7 @@ namespace DazVrBridge
             var hand = go.AddComponent<VrHand>();
             hand.side = side;
             hand.grabButton = grabButton;
+            hand.worldButton = worldButton;
             hand.grabRadius = grabRadius;
             go.SetActive(true);
             return hand;

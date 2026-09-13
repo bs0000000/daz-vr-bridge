@@ -43,7 +43,7 @@ namespace DazVrBridge
 
             if (Time.time >= _nextHandsCheck)
             {
-                _nextHandsCheck = Time.time + 0.5f;
+                _nextHandsCheck = Time.time + 0.1f; // fast enough to watch buttons
                 var hands = HandsStatus();
                 if (hands != _lastHands) { _lastHands = hands; Render(); }
             }
@@ -53,8 +53,8 @@ namespace DazVrBridge
         {
             if (!_rig) _rig = FindAnyObjectByType<VrRig>();
             if (!_rig || !_rig.Left || !_rig.Right) return "";
-            string One(VrHand h) => h.IsTracked ? $"tracked ({h.DeviceName})" : (h.DeviceName.Length > 0 ? $"seen, not tracked ({h.DeviceName})" : "no device");
-            return $"L: {One(_rig.Left)}\nR: {One(_rig.Right)}\ndevices: {VrHand.DescribeDevices()}";
+            string One(VrHand h) => h.IsTracked ? $"tracked ({h.DeviceName}) {h.ButtonMonitor()}" : (h.DeviceName.Length > 0 ? $"seen, not tracked ({h.DeviceName})" : "no device");
+            return $"L: {One(_rig.Left)}\nR: {One(_rig.Right)}\nrig scale {_rig.Scale:F2}  devices: {VrHand.DescribeDevices()}";
         }
 
         void OnFrame(BridgeFrame f)

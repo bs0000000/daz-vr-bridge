@@ -18,10 +18,12 @@ namespace DazVrBridge
     public sealed class VrHand : MonoBehaviour
     {
         public enum Side { Left, Right }
-        public enum GrabButton { Trigger, Grip }
+        public enum GrabButton { Trigger, Grip, Primary, Secondary }
 
         public Side side;
         public GrabButton grabButton = GrabButton.Trigger;
+        [Tooltip("Button that grabs the world (move/scale). Check the HUD's button monitor to see what your controller reports.")]
+        public GrabButton worldButton = GrabButton.Grip;
         [Tooltip("Handles within this distance of the controller can be grabbed (meters).")]
         public float grabRadius = 0.06f;
 
@@ -32,6 +34,7 @@ namespace DazVrBridge
         public bool HoldingSomething => _grabbed != null;
 
         InputAction _position, _rotation, _grab, _world, _isTracked;
+        InputAction _monTrigger, _monGrip, _monPrimary, _monSecondary; // button monitor for the HUD
         GameObject _vis;
 
         IGrabbable _hover;
@@ -45,10 +48,13 @@ namespace DazVrBridge
             _position = new InputAction($"{hand}/position", binding: $"<XRController>{{{hand}}}/devicePosition");
             _rotation = new InputAction($"{hand}/rotation", binding: $"<XRController>{{{hand}}}/deviceRotation");
             _isTracked = new InputAction($"{hand}/isTracked", InputActionType.Button, $"<XRController>{{{hand}}}/isTracked");
-            var button = grabButton == GrabButton.Trigger ? "triggerPressed" : "gripPressed";
-            var other = grabButton == GrabButton.Trigger ? "gripPressed" : "triggerPressed";
-            _grab = new InputAction($"{hand}/grab", InputActionType.Button, $"<XRController>{{{hand}}}/{button}");
-            _world = new InputAction($"{hand}/world", InputActionType.Button, $"<XRController>{{{hand}}}/{other}");
+            _grab = ButtonAction($"{hand}/grab", hand, grabButton);
+            _world = ButtonAction($"{hand}/world", hand, worldButton);
+
+            _monTrigger = ButtonAction($"{hand}/mon.trigger", hand, GrabButton.Trigger);
+            _monGrip = ButtonAction($"{hand}/mon.grip", hand, GrabButton.Grip);
+            _monPrimary = ButtonAction($"{hand}/mon.primary", hand, GrabButton.Primary);
+            _monSecondary = ButtonAction($"{hand}/mon.secondary", hand, GrabButton.Secondary);
 
             // A visible controller: a small elongated box, shown only while tracked,
             // drawn through the body (overlay) so it never vanishes inside a limb.
@@ -67,14 +73,51 @@ namespace DazVrBridge
             _vis.SetActive(false);
         }
 
+        // A button action with every binding that could mean that button on some
+        // controller/runtime: digital press plus the analog axis for trigger/grip
+        // (pressed past 0.5), and both common names for the face buttons.
+        static InputAction ButtonAction(string name, string hand, GrabButton button)
+        {
+            var a = new InputAction(name, InputActionType.Button);
+            var h = $"<XRController>{{{hand}}}";
+            switch (button)
+            {
+                case GrabButton.Trigger:
+                    a.AddBinding($"{h}/triggerPressed");
+                    a.AddBinding($"{h}/trigger");
+                    break;
+                case GrabButton.Grip:
+                    a.AddBinding($"{h}/gripPressed");
+                    a.AddBinding($"{h}/grip");
+                    a.AddBinding($"{h}/gripButton");
+                    break;
+                case GrabButton.Primary:
+                    a.AddBinding($"{h}/primaryButton");
+                    break;
+                case GrabButton.Secondary:
+                    a.AddBinding($"{h}/secondaryButton");
+                    break;
+            }
+            return a;
+        }
+
+        InputAction[] AllActions() => new[] { _position, _rotation, _grab, _world, _isTracked, _monTrigger, _monGrip, _monPrimary, _monSecondary };
+
         void OnEnable()
         {
-            _position.Enable(); _rotation.Enable(); _grab.Enable(); _world.Enable(); _isTracked.Enable();
+            foreach (var a in AllActions()) a.Enable();
         }
 
         void OnDisable()
         {
-            _position.Disable(); _rotation.Disable(); _grab.Disable(); _world.Disable(); _isTracked.Disable();
+            foreach (var a in AllActions()) a.Disable();
+        }
+
+        // For the HUD: which of the four buttons this controller currently reports pressed.
+        public string ButtonMonitor()
+        {
+            if (!IsTracked) return "-";
+            return $"trig={(_monTrigger.IsPressed() ? 1 : 0)} grip={(_monGrip.IsPressed() ? 1 : 0)} A/X={(_monPrimary.IsPressed() ? 1 : 0)} B/Y={(_monSecondary.IsPressed() ? 1 : 0)}";
         }
 
         void Update()
@@ -111,12 +154,16 @@ namespace DazVrBridge
             // Reach is a physical distance: scale it with the rig so a giant still reaches.
             var reach = grabRadius * transform.lossyScale.x;
             var n = Physics.OverlapSphereNonAlloc(transform.position, reach, _overlap, ~0, QueryTriggerInteraction.Collide);
+            var bestPriority = int.MaxValue;
             for (var i = 0; i < n; i++)
             {
                 var g = _overlap[i].GetComponentInParent<IGrabbable>(); // ring/body colliders are children
                 if (g == null || g.IsGrabbed) continue;
                 var d = g.DistanceTo(transform.position);
-                if (d < bestDist) { bestDist = d; best = g; }
+                if (g.Priority < bestPriority || (g.Priority == bestPriority && d < bestDist))
+                {
+                    bestPriority = g.Priority; bestDist = d; best = g;
+                }
             }
             if (best != _hover)
             {

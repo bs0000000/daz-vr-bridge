@@ -14,6 +14,7 @@ namespace DazVrBridge
         public float pickBias = 0.03f;
 
         public bool IsGrabbed { get; private set; }
+        public int Priority => 1;
 
         Vector3 _offsetPos;
         Quaternion _offsetRot;

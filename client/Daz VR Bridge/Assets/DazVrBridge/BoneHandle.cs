@@ -23,6 +23,7 @@ namespace DazVrBridge
 
         public State Current { get; private set; } = State.Idle;
         public bool IsGrabbed => Current == State.Grabbed;
+        public int Priority => 0;
 
         Renderer _renderer;
         float _alpha = 1f;

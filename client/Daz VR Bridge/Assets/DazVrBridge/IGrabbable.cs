@@ -7,6 +7,9 @@ namespace DazVrBridge
 {
     public interface IGrabbable
     {
+        // Lower wins when several are in reach: bone handles (0) before whole nodes (1),
+        // so a hand inside a sofa's grab box still picks the bone handle next to it.
+        int Priority { get; }
         // Distance from a world point to the grabbable surface; the hand picks the smallest.
         float DistanceTo(Vector3 world);
         bool IsGrabbed { get; }
