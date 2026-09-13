@@ -99,9 +99,14 @@ Objects follow the hand rigidly; bones use the swing/twist drag. Moving a node a
 updates VR within ~100 ms (`node.state`).
 
 Keep `Bridge` (BridgeSession, SceneLoader, PoseSync, NodeSync, BoneHandles) as a plain object at
-the scene root rather than under the Canvas — the Canvas is scaled 0.001 and `DazScene`
-is parented to the SceneLoader's object. Place `Bridge` about 1.5 m in front of the
-XR Origin.
+the scene root — **never under the XR Origin or the Canvas**. `DazScene` is parented to the
+SceneLoader's object, so under the XR Origin the world grab would move and scale the Daz
+scene along with you (nothing appears to happen), and the Canvas is scaled 0.001. Place
+`Bridge` at the origin; use the world grab to bring the scene to you.
+
+Controllers that leave the headset's view dim rather than vanish: the hand keeps its last
+valid pose (the runtime extrapolates from the IMU) and stays usable. The HUD marks such a
+hand "(imu)".
 
 ## Files
 

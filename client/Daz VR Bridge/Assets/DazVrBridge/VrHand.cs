@@ -27,15 +27,23 @@ namespace DazVrBridge
         [Tooltip("Handles within this distance of the controller can be grabbed (meters).")]
         public float grabRadius = 0.06f;
 
-        public bool IsTracked { get; private set; }
+        // Present: a controller for this hand exists and has reported a pose at least once.
+        // That is what interaction keys off; losing optical tracking (isTracked=false, the
+        // runtime extrapolating from the IMU) only dims the visual.
+        public bool IsTracked => DevicePresent && _hasPose;
+        public bool DevicePresent { get; private set; }
+        public bool OpticallyTracked { get; private set; }
         public string DeviceName { get; private set; } = "";
+        bool _hasPose;
         // The other button (grip when trigger grabs bones): held to grab the world.
         public bool WorldGrab => IsTracked && _world.IsPressed();
         public bool HoldingSomething => _grabbed != null;
 
-        InputAction _position, _rotation, _grab, _world, _isTracked;
+        InputAction _position, _rotation, _grab, _world, _isTracked, _trackingState;
         InputAction _monTrigger, _monGrip, _monPrimary, _monSecondary; // button monitor for the HUD
         GameObject _vis;
+        Renderer _visRenderer;
+        Color _visColor;
 
         IGrabbable _hover;
         IGrabbable _grabbed;
@@ -48,6 +56,7 @@ namespace DazVrBridge
             _position = new InputAction($"{hand}/position", binding: $"<XRController>{{{hand}}}/devicePosition");
             _rotation = new InputAction($"{hand}/rotation", binding: $"<XRController>{{{hand}}}/deviceRotation");
             _isTracked = new InputAction($"{hand}/isTracked", InputActionType.Button, $"<XRController>{{{hand}}}/isTracked");
+            _trackingState = new InputAction($"{hand}/trackingState", InputActionType.Value, $"<XRController>{{{hand}}}/trackingState");
             _grab = ButtonAction($"{hand}/grab", hand, grabButton);
             _world = ButtonAction($"{hand}/world", hand, worldButton);
 
@@ -63,13 +72,10 @@ namespace DazVrBridge
             Destroy(_vis.GetComponent<Collider>());
             _vis.transform.SetParent(transform, false);
             _vis.transform.localScale = new Vector3(0.03f, 0.03f, 0.10f);
-            var r = _vis.GetComponent<Renderer>();
-            r.sharedMaterial = BoneHandle.OverlayMaterial();
-            var block = new MaterialPropertyBlock();
-            var c = side == Side.Left ? new Color(0.85f, 0.9f, 1f, 0.9f) : new Color(1f, 0.9f, 0.85f, 0.9f);
-            block.SetColor("_BaseColor", c);
-            block.SetColor("_Color", c);
-            r.SetPropertyBlock(block);
+            _visRenderer = _vis.GetComponent<Renderer>();
+            _visRenderer.sharedMaterial = BoneHandle.OverlayMaterial();
+            _visColor = side == Side.Left ? new Color(0.85f, 0.9f, 1f, 0.9f) : new Color(1f, 0.9f, 0.85f, 0.9f);
+            SetVisAlpha(0.9f);
             _vis.SetActive(false);
         }
 
@@ -101,7 +107,17 @@ namespace DazVrBridge
             return a;
         }
 
-        InputAction[] AllActions() => new[] { _position, _rotation, _grab, _world, _isTracked, _monTrigger, _monGrip, _monPrimary, _monSecondary };
+        InputAction[] AllActions() => new[] { _position, _rotation, _grab, _world, _isTracked, _trackingState, _monTrigger, _monGrip, _monPrimary, _monSecondary };
+
+        void SetVisAlpha(float a)
+        {
+            if (!_visRenderer) return;
+            var c = _visColor; c.a = a;
+            var block = new MaterialPropertyBlock();
+            block.SetColor("_BaseColor", c);
+            block.SetColor("_Color", c);
+            _visRenderer.SetPropertyBlock(block);
+        }
 
         void OnEnable()
         {
@@ -117,23 +133,38 @@ namespace DazVrBridge
         public string ButtonMonitor()
         {
             if (!IsTracked) return "-";
-            return $"trig={(_monTrigger.IsPressed() ? 1 : 0)} grip={(_monGrip.IsPressed() ? 1 : 0)} A/X={(_monPrimary.IsPressed() ? 1 : 0)} B/Y={(_monSecondary.IsPressed() ? 1 : 0)}";
+            var track = OpticallyTracked ? "" : " (imu)";
+            return $"trig={(_monTrigger.IsPressed() ? 1 : 0)} grip={(_monGrip.IsPressed() ? 1 : 0)} A/X={(_monPrimary.IsPressed() ? 1 : 0)} B/Y={(_monSecondary.IsPressed() ? 1 : 0)}{track}";
         }
 
         void Update()
         {
-            var device = _position.activeControl?.device;
-            DeviceName = device != null ? device.displayName : "";
-            IsTracked = device != null && _isTracked.IsPressed();
-            _vis.SetActive(IsTracked);
+            // Bound controls exist iff a controller for this hand is connected.
+            var controls = _position.controls;
+            DevicePresent = controls.Count > 0;
+            DeviceName = DevicePresent ? controls[0].device.displayName : "";
+            OpticallyTracked = DevicePresent && _isTracked.IsPressed();
 
-            if (IsTracked)
+            if (DevicePresent)
             {
-                // Pose relative to the Camera Offset this hand is parented under.
-                transform.localPosition = _position.ReadValue<Vector3>();
-                var rot = _rotation.ReadValue<Quaternion>();
-                if (rot.x != 0f || rot.y != 0f || rot.z != 0f || rot.w != 0f) transform.localRotation = rot;
+                // Take a pose component only when the runtime flags it valid (bit 1 =
+                // position, bit 2 = rotation); otherwise keep the last one rather than
+                // snapping to the origin. Runtimes usually keep both valid on the IMU alone.
+                var state = _trackingState.controls.Count > 0 ? (int)_trackingState.ReadValue<int>() : 3;
+                if ((state & 1) != 0)
+                {
+                    var p = _position.ReadValue<Vector3>();
+                    if (p != Vector3.zero || _hasPose) { transform.localPosition = p; _hasPose = true; }
+                }
+                if ((state & 2) != 0)
+                {
+                    var rot = _rotation.ReadValue<Quaternion>();
+                    if (rot.x != 0f || rot.y != 0f || rot.z != 0f || rot.w != 0f) transform.localRotation = rot;
+                }
             }
+
+            _vis.SetActive(IsTracked);
+            SetVisAlpha(OpticallyTracked ? 0.9f : 0.35f);
 
             if (_grabbed != null)
             {
