@@ -65,10 +65,12 @@ namespace DazVrBridge
             if (kb.cKey.wasPressedThisFrame) { CommitAll(); return true; }
             if (kb.tKey.wasPressedThisFrame) { SelfTest(); return true; }
             if (kb.rKey.wasPressedThisFrame) { loader.RequestScene(); return true; }
+            if (kb.dKey.wasPressedThisFrame) { DebugBoneOffsets(); return true; }
 #else
             if (Input.GetKeyDown(KeyCode.C)) { CommitAll(); return true; }
             if (Input.GetKeyDown(KeyCode.T)) { SelfTest(); return true; }
             if (Input.GetKeyDown(KeyCode.R)) { loader.RequestScene(); return true; }
+            if (Input.GetKeyDown(KeyCode.D)) { DebugBoneOffsets(); return true; }
 #endif
             return false;
         }
@@ -166,6 +168,53 @@ namespace DazVrBridge
                 return;
             }
             Debug.LogWarning("[DazVrBridge] no figure loaded");
+        }
+
+        // ---- diagnostics
+
+        // D key: for a few bones, distance between the live bone position and the
+        // centroid of the skinned mesh's vertices that belong (>= 0.9) to that bone.
+        // Should be a few cm (joint center vs. flesh); tens of cm means the mesh and
+        // the pivots disagree.
+        [ContextMenu("Debug bone offsets")]
+        public void DebugBoneOffsets()
+        {
+            foreach (var fig in loader.Figures.Values)
+            {
+                var smr = fig.Go.GetComponentInChildren<SkinnedMeshRenderer>();
+                if (!smr) continue;
+                var baked = new Mesh();
+                smr.BakeMesh(baked, true);
+                var verts = baked.vertices;
+                var l2w = smr.transform.localToWorldMatrix;
+                var perVertex = smr.sharedMesh.GetBonesPerVertex();
+                var weights = smr.sharedMesh.GetAllBoneWeights();
+
+                var sums = new Dictionary<int, (Vector3 sum, int n)>();
+                var wi = 0;
+                for (var v = 0; v < perVertex.Length; v++)
+                {
+                    for (var k = 0; k < perVertex[v]; k++, wi++)
+                    {
+                        var bw = weights[wi];
+                        if (bw.weight < 0.9f) continue;
+                        sums.TryGetValue(bw.boneIndex, out var acc);
+                        sums[bw.boneIndex] = (acc.sum + l2w.MultiplyPoint3x4(verts[v]), acc.n + 1);
+                    }
+                }
+                perVertex.Dispose(); weights.Dispose();
+
+                var sb = new System.Text.StringBuilder($"[DazVrBridge] bone offsets for {fig.Label} (root scale {loader.Root.lossyScale.y:F3}):\n");
+                foreach (var id in new[] { "hip", "head", "l_eye", "l_upperarm", "l_forearm", "l_hand", "r_hand", "l_thigh", "l_foot" })
+                {
+                    if (!fig.ByName.TryGetValue(id, out var i) || !sums.TryGetValue(i, out var acc) || acc.n == 0) { sb.Append($"  {id}: no vertices\n"); continue; }
+                    var c = acc.sum / acc.n;
+                    var p = fig.Bones[i].position;
+                    sb.Append($"  {id,-11} n={acc.n,5}  bone={p:F3}  centroid={c:F3}  |d|={(c - p).magnitude * 100f:F1} cm  dy={(c - p).y * 100f:F1} cm\n");
+                }
+                Debug.Log(sb.ToString());
+                LastSelfTest = sb.ToString();
+            }
         }
 
         // ---- bookkeeping
