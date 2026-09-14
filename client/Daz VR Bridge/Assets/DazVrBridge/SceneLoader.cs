@@ -767,6 +767,10 @@ namespace DazVrBridge
                         m.EnableKeyword("_ALPHATOMASK_ON");
                         m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
                     }
+                    // An approximated surface is an open shell; both sides of it are
+                    // real from somewhere.
+                    if (def.Value<bool?>("two_sided") == true && m.HasProperty("_Cull"))
+                        m.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Off);
                     Want(def.Value<string>("base_tex"), m, normal: false);
                     if (!string.IsNullOrEmpty(def.Value<string>("normal_tex")))
                     {

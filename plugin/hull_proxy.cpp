@@ -44,7 +44,7 @@ DzVec3 direction( int ring, int segment )
 // Every point votes for the grid cell nearest its own direction, keeping the furthest
 // it reaches. One pass over the points rather than one per cell, which matters when
 // the cloud is a hundred thousand strand vertices.
-void accumulate( QVector<float> &radius, const QVector<DzVec3> &points, const DzVec3 &centre )
+void accumulate( QVector<float> &radius, QVector<bool> &seen, const QVector<DzVec3> &points, const DzVec3 &centre )
 {
 	for ( const DzVec3 &p : points )
 	{
@@ -61,6 +61,7 @@ void accumulate( QVector<float> &radius, const QVector<DzVec3> &points, const Dz
 		const int segment = qBound( 0, int( theta / ( 2.0 * M_PI ) * c_segments + 0.5 ) % c_segments, c_segments - 1 );
 		float &r = radius[ cell( ring, segment ) ];
 		r = qMax( r, length );
+		seen[ cell( ring, segment ) ] = true;
 	}
 }
 
@@ -174,7 +175,12 @@ bool bakeHullProxy( DzNode* node, const DzNode* space, const QStringList &figure
 	centre.m_x /= points.size(); centre.m_y /= points.size(); centre.m_z /= points.size();
 
 	QVector<float> radius( c_rings * c_segments, 0.0f );
-	accumulate( radius, points, centre );
+	// Which directions any hair actually went in. A hull measured outward from one
+	// centre is star-shaped, so it spans its own concavities -- and the largest
+	// concavity in a head of hair is the face. The filled radii keep the surface smooth
+	// where it exists; this says where it exists at all.
+	QVector<bool> seen( c_rings * c_segments, false );
+	accumulate( radius, seen, points, centre );
 	fillAndSmooth( radius );
 
 	// --- a sphere whose radius varies per direction
@@ -202,12 +208,27 @@ bool bakeHullProxy( DzNode* node, const DzNode* space, const QStringList &figure
 	{
 		for ( int segment = 0; segment < c_segments; ++segment )
 		{
+			// Leave a hole where no strand pointed. Two corners of four keeps the shell
+			// continuous through thin patches while still opening over a face, and it is
+			// what makes this read as hair rather than as a helmet.
+			const int s1 = ( segment + 1 ) % c_segments;
+			const int covered = ( seen[ cell( ring, segment ) ] ? 1 : 0 )
+				+ ( seen[ cell( ring, s1 ) ] ? 1 : 0 )
+				+ ( seen[ cell( ring + 1, segment ) ] ? 1 : 0 )
+				+ ( seen[ cell( ring + 1, s1 ) ] ? 1 : 0 );
+			if ( covered < 2 )
+			{
+				continue;
+			}
+
 			const quint32 a = quint32( ring * stride + segment );
 			const quint32 b = quint32( a + 1 );
 			const quint32 c = quint32( ( ring + 1 ) * stride + segment );
 			const quint32 d = quint32( c + 1 );
-			indices << a << c << b;
-			indices << b << c << d;
+			// Wound so the outside faces out. The first attempt had it inverted, which is
+			// why the head showed through the front and the far side showed its interior.
+			indices << a << b << c;
+			indices << b << d << c;
 		}
 	}
 

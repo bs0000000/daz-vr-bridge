@@ -332,6 +332,10 @@ void bakeMeshInto( DzNode* node, const DzNode* space, QJsonObject &entry, const 
 				m.remove( "base_tex" );
 				m.remove( "normal_tex" );
 				m.remove( "cutout" );
+				// A hull is an open shell -- it has a hole where the face is -- so the
+				// inside of its far side has to draw, or you look through the opening
+				// into nothing.
+				m[ "two_sided" ] = true;
 				mats.replace( i, m );
 			}
 			chunks.materials[ "materials" ] = mats;

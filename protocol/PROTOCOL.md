@@ -137,7 +137,10 @@ A node whose geometry the bake cannot use — strand-based hair above all — ca
 node's own vertex cloud reaches in each direction from its centre, as a sphere with
 those radii. It keeps a bob a bob and a ponytail a ponytail for a few hundred
 triangles, and it keeps the surface's colour but drops its textures, whose UVs mean
-nothing on a hull. On a follower it also ships a skin binding every vertex rigidly to
+nothing on a hull. The hull is open where no geometry pointed -- a head of hair has a
+large concavity called a face, and a star-shaped hull would otherwise span it -- so
+its material is marked `two_sided` and the client draws both faces. On a follower it
+also ships a skin binding every vertex rigidly to
 the figure bone nearest its centre -- the head, for hair -- which is what puts it in
 the right place and carries it when that bone moves; a follower's mesh is parented
 under the figure and skinned with its bones, so an unskinned one lands wherever the
