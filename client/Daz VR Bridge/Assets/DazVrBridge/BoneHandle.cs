@@ -94,6 +94,12 @@ namespace DazVrBridge
         Transform _contactDisc;
         VrHand _hand;
         bool _wasPinned;
+        float _nextLimitPulse;
+        // How fast a steered bend may turn. Slow enough that it reads as the joint
+        // swinging, fast enough to follow a hand.
+        const float SteerSlewDegPerSecond = 300f;
+        bool _steering;
+        Transform _steerRing;
 
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
@@ -267,6 +273,7 @@ namespace DazVrBridge
                 _lastEffector = ResolveAgainstSurfaces(desiredEffector, targetRot);
                 SolveIk(_lastEffector, targetRot);
                 ShowContact();
+                ShowSteerCircle();
                 if (_onSurface && !wasOnSurface) _hand?.Pulse(0.35f, 0.03f); // a tick on touching down
                 return;
             }
@@ -546,6 +553,7 @@ namespace DazVrBridge
             var clamping = ClampToLimits && Loader != null;
             // The other hand on the elbow or knee, if it is there.
             Vector3? steer = MidHandle && MidHandle.IsSteering ? MidHandle.SteerPoint : (Vector3?)null;
+            _steering = steer.HasValue;
 
             if (shoulder)
             {
@@ -556,7 +564,12 @@ namespace DazVrBridge
             var iterations = clamping ? Mathf.Max(1, IkIterations) : 1;
             for (var i = 0; i < iterations; i++)
             {
-                TwoBoneIk.Solve(root, mid, Bone, targetPos, pole, ref _bendHint, steer);
+                // Steer on the first pass only. The passes after it exist to settle the
+                // clamps, and re-imposing the steer against them each time is two rules
+                // pulling opposite ways at sixty hertz -- which is the limb jumping.
+                TwoBoneIk.Solve(root, mid, Bone, targetPos, pole, ref _bendHint,
+                    i == 0 ? steer : null,
+                    i == 0 ? SteerSlewDegPerSecond * Time.deltaTime * Mathf.Deg2Rad : 0f);
                 if (!clamping) break;
 
                 var moved = DazEuler.ClampToLimits(Loader, Figure, _ikRoot)
@@ -659,10 +672,55 @@ namespace DazVrBridge
             sh.rotation = partial * _shoulderRot0;
         }
 
+        // The elbow or knee can only ever sit on one circle: the lengths of the two
+        // segments and the distance to the target fix it completely, and the only freedom
+        // in the whole limb is where on that circle the joint goes. Drawing it while a
+        // second hand is steering is the difference between a joint that swings for no
+        // visible reason and one that is plainly running along a track.
+        void ShowSteerCircle()
+        {
+            if (!_steering)
+            {
+                if (_steerRing) _steerRing.gameObject.SetActive(false);
+                return;
+            }
+
+            var a = Figure.Bones[_ikRoot].position;
+            var joint = Figure.Bones[_ikMid].position;
+            var axis = _lastEffector - a;
+            if (axis.sqrMagnitude < 1e-8f) return;
+            axis.Normalize();
+
+            var centre = a + axis * Vector3.Dot(joint - a, axis);
+            var radius = Vector3.Distance(joint, centre);
+            if (radius < 1e-4f)
+            {
+                if (_steerRing) _steerRing.gameObject.SetActive(false);
+                return;
+            }
+
+            if (!_steerRing)
+            {
+                var go = new GameObject("steer circle");
+                go.AddComponent<MeshFilter>().sharedMesh = TorusMesh(1f, 0.02f);
+                var r = go.AddComponent<MeshRenderer>();
+                r.sharedMaterial = OverlayMaterial();
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                _steerRing = go.transform;
+            }
+
+            // The torus lies in its own XZ plane, so its Y has to become the limb's axis.
+            _steerRing.SetPositionAndRotation(centre, Quaternion.FromToRotation(Vector3.up, axis));
+            _steerRing.localScale = Vector3.one * radius;
+            _steerRing.gameObject.SetActive(true);
+        }
+
         // The disc lives at the scene root (it follows a surface, not the bone), so it
         // has to be cleaned up by hand when the scene is rebuilt.
         void OnDestroy()
         {
+            if (_steerRing) Destroy(_steerRing.gameObject);
             if (_contactDisc) Destroy(_contactDisc.gameObject);
         }
 
@@ -671,6 +729,8 @@ namespace DazVrBridge
             _onSurface = false;
             _wasPinned = false;
             IsSteering = false;
+            _steering = false;
+            if (_steerRing) _steerRing.gameObject.SetActive(false);
             _hand = null;
             if (_contactDisc) _contactDisc.gameObject.SetActive(false);
             SetState(State.Idle);
@@ -692,8 +752,15 @@ namespace DazVrBridge
         public void SetOverLimit(float pinned)
         {
             // Buzz once on running out of range, so it can be felt rather than read.
-            var nowPinned = pinned > 0.6f;
-            if (nowPinned && !_wasPinned && Current == State.Grabbed) _hand?.Pulse(0.7f, 0.06f);
+            // Hysteresis, and a floor on how often it may fire. A bare threshold flickers
+            // whenever a joint sits on its limit -- which is exactly when a limb is being
+            // pushed hard -- and the buzz then arrives every other frame.
+            var nowPinned = pinned > (_wasPinned ? 0.45f : 0.7f);
+            if (nowPinned && !_wasPinned && Current == State.Grabbed && Time.time >= _nextLimitPulse)
+            {
+                _hand?.Pulse(0.7f, 0.06f);
+                _nextLimitPulse = Time.time + 0.4f;
+            }
             _wasPinned = nowPinned;
 
             if (Mathf.Approximately(_overLimit, pinned)) return;

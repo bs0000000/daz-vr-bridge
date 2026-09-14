@@ -19,7 +19,8 @@ namespace DazVrBridge
     public static class TwoBoneIk
     {
         public static void Solve(Transform root, Transform mid, Transform end,
-            Vector3 target, Vector3 poleDir, ref Vector3 bendHint, Vector3? bendTowards = null)
+            Vector3 target, Vector3 poleDir, ref Vector3 bendHint, Vector3? bendTowards = null,
+            float maxBendStep = 0f)
         {
             var a = root.position;
             var b = mid.position;
@@ -38,20 +39,43 @@ namespace DazVrBridge
             // straight and pointing at the target.
             lat = Mathf.Clamp(lat, Mathf.Abs(lab - lcb) + 1e-4f, lab + lcb - 1e-4f);
 
-            // A steer point wins outright: it is a hand saying where the joint goes.
-            var bend = bendTowards.HasValue ? Perp(bendTowards.Value - a, dir) : Vector3.zero;
+            // Where the middle joint has to sit for both segments to reach: somewhere on
+            // a circle about the line from root to target. The lengths fix its centre and
+            // its radius, so the only freedom left in the whole limb is where on that
+            // circle the joint sits -- which is what the bend plane picks, and all a
+            // second hand can possibly steer.
+            var cosRoot = Mathf.Clamp((lat * lat + lab * lab - lcb * lcb) / (2f * lat * lab), -1f, 1f);
+            var sinRoot = Mathf.Sqrt(Mathf.Max(0f, 1f - cosRoot * cosRoot));
+            var centre = a + dir * (lab * cosRoot);
+            var circleRadius = lab * sinRoot;
+
+            var bend = Vector3.zero;
+            if (bendTowards.HasValue)
+            {
+                var want = Perp(bendTowards.Value - centre, dir);
+                // Near the circle's own axis the direction is ill-conditioned: a
+                // millimetre of hand movement swings the joint through half a turn. Hold
+                // what the joint had rather than let it spin.
+                if (want.magnitude > Mathf.Max(0.02f, circleRadius * 0.3f)) bend = want;
+            }
             if (bend.sqrMagnitude < 1e-8f) bend = Perp(b - a, dir);
             if (bend.sqrMagnitude < 1e-8f) bend = Perp(bendHint, dir);
             if (bend.sqrMagnitude < 1e-8f) bend = Perp(poleDir, dir);
             if (bend.sqrMagnitude < 1e-8f) bend = Perp(Vector3.up, dir);
             if (bend.sqrMagnitude < 1e-8f) bend = Perp(Vector3.right, dir);
             bend.Normalize();
+
+            // Never snap. A bend that jumps takes the whole limb with it, and at speed
+            // that reads as the arm exploding rather than as a joint turning over.
+            if (maxBendStep > 0f && bendHint.sqrMagnitude > 1e-8f)
+            {
+                var from = Perp(bendHint, dir);
+                if (from.sqrMagnitude > 1e-8f)
+                    bend = Vector3.RotateTowards(from.normalized, bend, maxBendStep, 0f).normalized;
+            }
             bendHint = bend;
 
-            // Where the middle joint has to sit for both segments to reach.
-            var cosRoot = Mathf.Clamp((lat * lat + lab * lab - lcb * lcb) / (2f * lat * lab), -1f, 1f);
-            var sinRoot = Mathf.Sqrt(Mathf.Max(0f, 1f - cosRoot * cosRoot));
-            var newB = a + dir * (lab * cosRoot) + bend * (lab * sinRoot);
+            var newB = centre + bend * circleRadius;
 
             // Aim root at the new joint, then the mid at the target. Each rotation is a
             // world-space pre-multiply; children follow, so positions are re-read after.
