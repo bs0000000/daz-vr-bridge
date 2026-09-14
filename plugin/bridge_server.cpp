@@ -16,7 +16,14 @@
 #include "dzapp.h"
 #include "dzscene.h"
 #include "dzskeleton.h"
+#include "dz3dviewport.h"
+#include "dzbone.h"
+#include "dzcamera.h"
+#include "dzmainwindow.h"
+#include "dzrendermgr.h"
 #include "dzundostack.h"
+#include "dzviewport.h"
+#include "dzviewportmgr.h"
 
 #include "scene_bake.h"
 #include "texture_bake.h"
@@ -109,6 +116,11 @@ Server::Server( QObject* parent ) :
 	connect( dzUndoStack, &DzUndoStack::redoAvailable, this, editStateDirty );
 	connect( dzUndoStack, &DzUndoStack::undoCaptionChanged, this, editStateDirty );
 	connect( dzUndoStack, &DzUndoStack::redoCaptionChanged, this, editStateDirty );
+
+	// A render locks Daz against edits, so the client has to know when one starts and
+	// stops rather than discovering it through refused commits.
+	connect( dzScene, &DzScene::aboutToRender, this, [this]( DzRenderer* ) { broadcastRenderState( true ); } );
+	connect( dzScene, &DzScene::renderFinished, this, [this]( DzRenderer* ) { broadcastRenderState( false ); } );
 
 	// Desk-side pose edits -> pose.state to every control connection.
 	m_poseWatcher = new PoseWatcher( this );
@@ -317,7 +329,19 @@ void Server::handleFrame( Connection &c, const Frame &f )
 
 	if ( type == "select" )
 	{
-		sendError( c, f, "not_implemented", "select arrives with the posing UX" );
+		handleSelect( c, f );
+		return;
+	}
+
+	if ( type == "pose.request" || type == "node.request" )
+	{
+		handleStateRequest( c, f );
+		return;
+	}
+
+	if ( type == "render.begin" )
+	{
+		handleRender( c, f );
 		return;
 	}
 
@@ -691,6 +715,150 @@ void Server::broadcastEditState()
 	QJsonObject h = undoSummary();
 	h[ "t" ] = "edit.state";
 	h[ "seq" ] = m_seq++;
+	broadcastControl( h );
+}
+
+// Mirrors a VR grab into Daz's own selection, so the desk shows what the headset is
+// holding. Bones select through their figure: Daz's primary selection is a node, and a
+// bone is one, so the same call serves both.
+void Server::handleSelect( Connection &c, const Frame &f )
+{
+	if ( c.role != "control" )
+	{
+		sendError( c, f, "wrong_connection", "select belongs on the control connection" );
+		return;
+	}
+
+	const QString nodeId = f.header.value( "node" ).toString();
+	const QString boneId = f.header.value( "bone" ).toString();
+	DzNode* node = findNodeById( nodeId );
+	if ( !node )
+	{
+		sendError( c, f, "unknown_node", "no such node: " % nodeId );
+		return;
+	}
+
+	DzNode* target = node;
+	if ( !boneId.isEmpty() )
+	{
+		if ( DzSkeleton* skeleton = qobject_cast<DzSkeleton*>( node ) )
+		{
+			if ( DzBone* bone = skeleton->findBone( boneId ) )
+			{
+				target = bone;
+			}
+		}
+	}
+
+	// Selecting is not an edit and does not belong on the undo stack.
+	dzScene->selectAllNodes( false );
+	target->select( true );
+	dzScene->setPrimarySelection( target );
+}
+
+// One node's or figure's current state, on request. The watcher already broadcasts
+// changes; this is for a client that suspects it has drifted -- after a draft session,
+// or a reconnection -- and wants the truth without re-baking the whole scene.
+void Server::handleStateRequest( Connection &c, const Frame &f )
+{
+	if ( c.role != "control" )
+	{
+		sendError( c, f, "wrong_connection", f.type() % " belongs on the control connection" );
+		return;
+	}
+
+	const bool wantsPose = f.type() == "pose.request";
+	const QString id = f.header.value( wantsPose ? "figure" : "node" ).toString();
+	DzNode* node = findNodeById( id );
+	if ( !node )
+	{
+		sendError( c, f, "unknown_node", "no such node: " % id );
+		return;
+	}
+
+	QJsonObject h;
+	if ( wantsPose )
+	{
+		DzSkeleton* skeleton = qobject_cast<DzSkeleton*>( node );
+		if ( !skeleton )
+		{
+			sendError( c, f, "unknown_node", id % " is not a figure" );
+			return;
+		}
+		h = poseStateFor( skeleton );
+		h[ "t" ] = "pose.state";
+	}
+	else
+	{
+		h = nodeStateFor( node );
+		h[ "t" ] = "node.state";
+	}
+	h[ "seq" ] = m_seq++;
+	h[ "ref_seq" ] = f.seq();
+	send( c.socket, h );
+}
+
+// Starts a render of whichever camera the request names, by pointing Daz's active
+// viewport at it first -- doRender renders the view, so the view is what has to change.
+void Server::handleRender( Connection &c, const Frame &f )
+{
+	if ( c.role != "control" )
+	{
+		sendError( c, f, "wrong_connection", "render.begin belongs on the control connection" );
+		return;
+	}
+
+	DzRenderMgr* renders = dzApp ? dzApp->getRenderMgr() : nullptr;
+	if ( !renders )
+	{
+		sendError( c, f, "not_implemented", "no render manager" );
+		return;
+	}
+	if ( renders->isRendering() )
+	{
+		sendError( c, f, "busy", "Daz is already rendering" );
+		return;
+	}
+
+	const QString cameraId = f.header.value( "camera" ).toString();
+	if ( !cameraId.isEmpty() )
+	{
+		DzCamera* camera = qobject_cast<DzCamera*>( findNodeById( cameraId ) );
+		DzMainWindow* window = dzApp->getInterface();
+		DzViewportMgr* viewports = window ? window->getViewportMgr() : nullptr;
+		Dz3DViewport* viewport = viewports ? qobject_cast<Dz3DViewport*>( viewports->getActiveViewport() ) : nullptr;
+		if ( camera && viewport )
+		{
+			viewport->setCamera( camera );
+		}
+		else if ( camera )
+		{
+			log( "Render: could not reach the active viewport, rendering its current camera instead" );
+		}
+	}
+
+	log( "Render started from VR" );
+	// aboutToRender / renderFinished do the telling; this only reports that it began.
+	const bool started = renders->doRender();
+	QJsonObject h;
+	h[ "t" ] = "render.state";
+	h[ "seq" ] = m_seq++;
+	h[ "ref_seq" ] = f.seq();
+	h[ "rendering" ] = started;
+	h[ "started" ] = started;
+	send( c.socket, h );
+}
+
+void Server::broadcastRenderState( bool rendering )
+{
+	if ( m_connections.isEmpty() )
+	{
+		return;
+	}
+	QJsonObject h;
+	h[ "t" ] = "render.state";
+	h[ "seq" ] = m_seq++;
+	h[ "rendering" ] = rendering;
 	broadcastControl( h );
 }
 

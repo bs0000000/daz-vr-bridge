@@ -44,7 +44,10 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `pose.commit` | control | `figure, bones: [[id, x, y, z, w] or [id, x, y, z, w, px, py, pz], …], label, selftest?` — each bone's target **world** rotation in Daz's quaternion sense, optionally with a world position in cm (the root carried by its ring; Daz stores it as the bone's translation via `setWSPos`); applied parents-first via `DzNode::setWSRot` as one undo step named `label`. Confirmation is the `pose.state` that follows (~100 ms), carrying whatever limits clamped. | **Phase 2a ✓** (position: Phase 4) |
 | `selftest.begin` | control | `figure` | **Phase 2a ✓** — plugin snapshots the figure's Euler controls and sends a `pose.state` with `selftest: true`; the client echoes it as `pose.commit {selftest: true}`; plugin applies it without undo, compares, restores, answers `selftest.result`. |
 | `edit.undo` / `edit.redo` | control | — pops **Daz's own** undo stack (`dzUndoStack`), the same step Ctrl+Z at the desk would take, because every `pose.commit` already lands there as a named entry. Answered by `edit.result`; the rollback itself arrives moments later as the usual `pose.state` / `node.state`. Refused with `busy` while Daz is loading, self-testing or already undoing. | **Phase 4 ✓** |
-| `select` | control | `node, bone?` | Phase 4 |
+| `select` | control | `node, bone?` — selects that node (or that bone of that figure) in Daz, so the desk follows the headset. Not an edit and not on the undo stack. | **Phase 4 ✓** |
+| `pose.request` | control | `figure` → `pose.state` | **Phase 4 ✓** — one figure's pose on demand, for a client that suspects it has drifted after drafting or reconnecting. Orders of magnitude cheaper than re-baking. |
+| `node.request` | control | `node` → `node.state` | **Phase 4 ✓** |
+| `render.begin` | control | `camera?` — points Daz's active viewport at that camera and starts a render, since `doRender` renders the view. Refused with `busy` if one is already running. | **Phase 4 ✓** |
 | `node.transform` | control | `node, pos[3] cm, rot[4] (Daz sense, world), commit, label` — applied via `setWSPos`/`setWSRot`; scale untouched; `commit:false` applies without an undo entry. Not for bones. | **Phase 3 ✓** |
 | `camera.set` | control | `camera, pos, rot, focal_mm, commit, label` — as above plus `setFocalLength` | **Phase 3 ✓** |
 | `pose.preview` | control | `figure, bones` | **reserved, v2** — v1 plugin answers `error deferred_v2` |
@@ -58,6 +61,7 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `error` | both | `code, msg, ref_seq` | **Phase 0 ✓** |
 | `scene.changed` | control | `reason: loaded\|cleared\|renamed\|nodes, scene:{path, nodes}` — `nodes` means a prop or figure was added or deleted at the desk; `nodeListChanged` fires once per node, so the plugin coalesces a storm into one message after 400 ms of quiet and stays silent during a scene load. | **Phase 0 ✓**, `nodes` **Phase 4 ✓** |
 | `edit.result` | control | `action: undo\|redo, ok, caption` (what was undone, empty for an unnamed step) plus the `edit` fields below | **Phase 4 ✓** |
+| `render.state` | control | `rendering` — broadcast when a render starts and finishes. Daz refuses scene edits throughout, so the client drops into draft for the duration rather than having commits refused one at a time. | **Phase 4 ✓** |
 | `edit.state` | control | `can_undo, can_redo, undo, redo` — broadcast whenever the stack's availability or captions change, so a VR menu can label and grey its buttons | **Phase 4 ✓** |
 | `progress` | control | `op, done, total, label` | Phase 1b |
 | `scene.manifest` | control | `manifest: {…}` — see below | **Phase 1b ✓** |
@@ -194,6 +198,7 @@ The manifest's `assets` entries for textures also carry `w`, `h`, `mips` and
 
 `hello_required`, `protocol_mismatch`, `bad_role`, `bad_pairing_code`, `unknown_session`,
 `wrong_connection`, `asset_unknown`, `asset_failed`, `commit_failed`, `selftest_state`, `not_implemented`, `busy`,
+`unknown_node`,
 `deferred_v2`, `unknown_type`.
 
 ## Conventions the client must honor

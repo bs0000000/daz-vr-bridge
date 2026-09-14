@@ -69,6 +69,7 @@ namespace DazVrBridge
         Entry[][] _pages;
         PoseSync _poses;
         PoseTakes _takes;
+        DeskSync _desk;
         int _page;
 
         const float ChipWidth = 11f;
@@ -117,6 +118,7 @@ namespace DazVrBridge
             _session = FindAnyObjectByType<BridgeSession>();
             _poses = FindAnyObjectByType<PoseSync>();
             _takes = FindAnyObjectByType<PoseTakes>();
+            _desk = FindAnyObjectByType<DeskSync>();
             BuildPages();
             LoadSettings();
             BuildVisuals();
@@ -139,7 +141,15 @@ namespace DazVrBridge
             pose[4] = new Entry { Label = "Setup", Kind = Kind.Page, Run = () => SetPage(1) };
             pose[5] = new Entry { Label = "Clamp", Kind = Kind.Toggle, Get = () => _handles && _handles.clampToLimits, Set = v => _handles.clampToLimits = v, Enabled = () => _handles };
             pose[6] = new Entry { Label = "Rods", Kind = Kind.Toggle, Get = () => _handles && _handles.showLimitGizmo, Set = v => _handles.showLimitGizmo = v, Enabled = () => _handles };
-            pose[7] = new Entry { Label = "Reload", Kind = Kind.Action, Run = () => _loader?.RequestScene(), Enabled = () => _loader && !_loader.Busy && _session && _session.ControlReady };
+            // Resync, not reload: asking Daz for every transform costs a few hundred bytes,
+            // where a re-bake costs the whole scene again. A rebuild is for when the scene
+            // has actually changed, and scene.changed already asks for that by itself.
+            pose[7] = new Entry
+            {
+                Label = "Resync", Kind = Kind.Action,
+                Run = () => _desk?.ResyncAll(),
+                Enabled = () => _desk && _session && _session.ControlReady && !DeskSync.Rendering,
+            };
 
             var setup = new Entry[Slots];
             setup[0] = new Entry
@@ -186,10 +196,17 @@ namespace DazVrBridge
                 Run = () => _takes?.Capture(),
                 Enabled = () => _takes && _takes.CanCapture,
             };
+            session[3] = new Entry
+            {
+                Label = "Render", Kind = Kind.Action,
+                Run = () => _desk?.Render(_desk.CameraToRender()),
+                // Daz refuses edits while it renders, so a second one cannot be asked for.
+                Enabled = () => _desk && _session && _session.ControlReady && !DeskSync.Rendering,
+            };
             session[4] = new Entry { Label = "Back", Kind = Kind.Page, Run = () => SetPage(0) };
             // The five slots run clockwise from the right, so which one is which is a
             // position rather than a number to read.
-            var slots = new[] { 2, 3, 5, 6, 7 };
+            var slots = new[] { 2, 5, 6, 7 };
             for (var i = 0; i < slots.Length && i < PoseTakes.SlotCount; i++)
             {
                 var index = i;

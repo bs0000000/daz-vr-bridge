@@ -21,7 +21,9 @@ namespace DazVrBridge
 {
     public sealed class PoseTakes : MonoBehaviour
     {
-        public const int SlotCount = 5;
+        // Four, because the session page also holds Draft, Take, Render and Back. More
+        // slots than positions on a wheel would mean numbers to read.
+        public const int SlotCount = 4;
 
         sealed class FigurePose
         {

@@ -20,6 +20,7 @@ namespace DazVrBridge
         Quaternion _offsetRot;
         GameObject _marker;
         static NodeSync _nodeSync;
+        static DeskSync _desk;
 
         public void Init(SceneLoader.LoadedNode node, Collider grabCollider)
         {
@@ -56,6 +57,8 @@ namespace DazVrBridge
             Tint(new Color(0.3f, 1f, 0.4f, 0.9f));
             if (!_nodeSync) _nodeSync = FindAnyObjectByType<NodeSync>();
             _nodeSync?.SetGrabbed(Node.Id, true);
+            if (!_desk) _desk = FindAnyObjectByType<DeskSync>();
+            _desk?.Selected(Node.Id, null);
         }
 
         public void UpdateGrab(Transform hand)

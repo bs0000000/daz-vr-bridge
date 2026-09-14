@@ -73,6 +73,10 @@ private:
 	void	handleSelfTestBegin( Connection &c, const Frame &f );
 	void	handleNodeTransform( Connection &c, const Frame &f );
 	void	handleEdit( Connection &c, const Frame &f );
+	void	handleSelect( Connection &c, const Frame &f );
+	void	handleStateRequest( Connection &c, const Frame &f );
+	void	handleRender( Connection &c, const Frame &f );
+	void	broadcastRenderState( bool rendering );
 	void	onFigureChanged( DzSkeleton* figure );
 	void	onNodeChanged( DzNode* node );
 	void	onNodeListChanged();

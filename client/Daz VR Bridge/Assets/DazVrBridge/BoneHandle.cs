@@ -31,6 +31,7 @@ namespace DazVrBridge
         float _alpha = 1f;
         float _ringRadius;
         static PoseSync _poseSync;
+        static DeskSync _desk;
 
         // Grab state. Spheres (aim-based FK): the bone swings about its origin so the
         // segment keeps pointing at the hand; the hand's roll about that axis twists the
@@ -243,6 +244,9 @@ namespace DazVrBridge
             SetState(State.Grabbed);
             if (!_poseSync) _poseSync = FindAnyObjectByType<PoseSync>();
             _poseSync?.SetGrabbed(Figure.Id, true);
+            // Tell Daz what is being held, so the monitor follows the headset.
+            if (!_desk) _desk = FindAnyObjectByType<DeskSync>();
+            _desk?.Selected(Figure.Id, BoneId);
         }
 
         public void UpdateGrab(Transform hand)
