@@ -40,14 +40,20 @@ namespace DazVrBridge
         // Figures with a bone currently held in VR: incoming pose.state is dropped for
         // them so Daz's last confirmation cannot fight the hand. The commit on release
         // produces a fresh pose.state anyway.
-        readonly HashSet<string> _grabbed = new HashSet<string>();
+        // Counted, not a set. Two hands on one figure is the normal case now that a
+        // limb can be steered, and with a set the first hand to let go cleared the flag
+        // for both -- Daz's pose.state then started overwriting the pose every hundred
+        // milliseconds while the other hand was still holding it.
+        readonly Dictionary<string, int> _grabbed = new Dictionary<string, int>();
 
         // True while any figure is being posed, so a scene rebuild can wait its turn.
         public bool AnyGrabbed => _grabbed.Count > 0;
 
         public void SetGrabbed(string figureId, bool on)
         {
-            if (on) _grabbed.Add(figureId); else _grabbed.Remove(figureId);
+            _grabbed.TryGetValue(figureId, out var held);
+            held = Mathf.Max(0, held + (on ? 1 : -1));
+            if (held > 0) _grabbed[figureId] = held; else _grabbed.Remove(figureId);
         }
 
         void Start()
@@ -103,7 +109,7 @@ namespace DazVrBridge
         {
             var id = h.Value<string>("figure");
             if (!loader.Figures.TryGetValue(id, out var fig)) return;
-            if (_grabbed.Contains(id)) return;
+            if (_grabbed.ContainsKey(id)) return;
 
             loader.ApplyWorldPose(fig, (JArray)h["bones"]);
             Snapshot(fig);

@@ -104,25 +104,7 @@ namespace DazVrBridge
         // How fast a steered bend may turn. Slow enough that it reads as the joint
         // swinging, fast enough to follow a hand.
         const float SteerSlewDegPerSecond = 300f;
-        bool _steering;
-        Transform _steerRing, _steerBead;
 
-        void HideSteerCircle()
-        {
-            if (_steerRing) _steerRing.gameObject.SetActive(false);
-            if (_steerBead) _steerBead.gameObject.SetActive(false);
-        }
-
-        static void Paint(Renderer r, Color c)
-        {
-            r.sharedMaterial = OverlayMaterial();
-            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            r.receiveShadows = false;
-            var block = new MaterialPropertyBlock();
-            block.SetColor(BaseColorId, c);
-            block.SetColor(ColorId, c);
-            r.SetPropertyBlock(block);
-        }
 
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
@@ -296,7 +278,6 @@ namespace DazVrBridge
                 _lastEffector = ResolveAgainstSurfaces(desiredEffector, targetRot);
                 SolveIk(_lastEffector, targetRot);
                 ShowContact();
-                ShowSteerCircle();
                 if (_onSurface && !wasOnSurface) _hand?.Pulse(0.35f, 0.03f); // a tick on touching down
                 return;
             }
@@ -579,7 +560,7 @@ namespace DazVrBridge
             if (Steerers != null)
                 foreach (var s in Steerers)
                     if (s && s.IsSteering) { steer = s.SteerPoint; break; }
-            _steering = steer.HasValue;
+
 
             if (shoulder)
             {
@@ -698,69 +679,10 @@ namespace DazVrBridge
             sh.rotation = partial * _shoulderRot0;
         }
 
-        // The elbow or knee can only ever sit on one circle: the lengths of the two
-        // segments and the distance to the target fix it completely, and the only freedom
-        // in the whole limb is where on that circle the joint goes. Drawing it while a
-        // second hand is steering is the difference between a joint that swings for no
-        // visible reason and one that is plainly running along a track.
-        void ShowSteerCircle()
-        {
-            if (!_steering)
-            {
-                HideSteerCircle();
-                return;
-            }
-
-            var a = Figure.Bones[_ikRoot].position;
-            var joint = Figure.Bones[_ikMid].position;
-            var axis = _lastEffector - a;
-            if (axis.sqrMagnitude < 1e-8f) return;
-            axis.Normalize();
-
-            var centre = a + axis * Vector3.Dot(joint - a, axis);
-            var radius = Vector3.Distance(joint, centre);
-            // A straight limb has no circle left: the joint is on the axis and there is
-            // nothing to run along. Better to show nothing than a dot pretending to be a
-            // track.
-            if (radius < 0.01f)
-            {
-                HideSteerCircle();
-                return;
-            }
-
-            if (!_steerRing)
-            {
-                var go = new GameObject("steer circle");
-                go.AddComponent<MeshFilter>().sharedMesh = TorusMesh(1f, 0.025f);
-                Paint(go.AddComponent<MeshRenderer>(), SteerColor);
-                _steerRing = go.transform;
-
-                // A ring on its own says nothing -- it reads as a hoop floating near an
-                // elbow. The bead is what makes it a track: the joint is visibly ON the
-                // wire, and moving the free hand visibly runs it around.
-                var bead = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                bead.name = "steer bead";
-                Destroy(bead.GetComponent<Collider>());
-                Paint(bead.GetComponent<MeshRenderer>(), Color.white);
-                _steerBead = bead.transform;
-            }
-
-            // The torus lies in its own XZ plane, so its Y has to become the limb's axis.
-            _steerRing.SetPositionAndRotation(centre, Quaternion.FromToRotation(Vector3.up, axis));
-            _steerRing.localScale = Vector3.one * radius;
-            _steerRing.gameObject.SetActive(true);
-
-            _steerBead.position = joint;
-            _steerBead.localScale = Vector3.one * Mathf.Clamp(radius * 0.14f, 0.008f, 0.03f);
-            _steerBead.gameObject.SetActive(true);
-        }
-
         // The disc lives at the scene root (it follows a surface, not the bone), so it
         // has to be cleaned up by hand when the scene is rebuilt.
         void OnDestroy()
         {
-            if (_steerRing) Destroy(_steerRing.gameObject);
-            if (_steerBead) Destroy(_steerBead.gameObject);
             if (_contactDisc) Destroy(_contactDisc.gameObject);
         }
 
@@ -769,8 +691,6 @@ namespace DazVrBridge
             _onSurface = false;
             _wasPinned = false;
             IsSteering = false;
-            _steering = false;
-            HideSteerCircle();
             _hand = null;
             if (_contactDisc) _contactDisc.gameObject.SetActive(false);
             SetState(State.Idle);
