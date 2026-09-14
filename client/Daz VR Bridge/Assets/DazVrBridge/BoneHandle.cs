@@ -758,7 +758,13 @@ namespace DazVrBridge
         public static Material OverlayMaterial()
         {
             if (_overlayMaterial) return _overlayMaterial;
-            var shader = Shader.Find("DazVrBridge/HandleOverlay")
+            // Resources.Load, not Shader.Find. Shader.Find searches every asset in the
+            // editor but only the shaders a build actually included, and nothing
+            // references this one from a scene -- so in a player it returned null and
+            // every handle, the wheel, the rods and the discs lost their ZTest Always and
+            // disappeared inside the figure. Correct in the editor, broken once built.
+            var shader = Resources.Load<Shader>("HandleOverlay")
+                      ?? Shader.Find("DazVrBridge/HandleOverlay")
                       ?? Shader.Find("Universal Render Pipeline/Unlit")
                       ?? Shader.Find("Unlit/Color");
             _overlayMaterial = new Material(shader) { name = "BridgeOverlay" };
