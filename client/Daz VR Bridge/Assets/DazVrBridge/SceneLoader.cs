@@ -744,12 +744,22 @@ namespace DazVrBridge
                     color = new Color(c[0].Value<float>(), c[1].Value<float>(), c[2].Value<float>());
                     m.name = defs[matIndex].Value<string>("name");
                 }
+                if (defs != null && matIndex < defs.Count)
+                {
+                    var def = (JObject)defs[matIndex];
+                    color.a = Mathf.Clamp01(def.Value<float?>("opacity") ?? 1f);
+                }
+
                 if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
                 else if (m.HasProperty("_Color")) m.SetColor("_Color", color);
 
                 if (defs != null && matIndex < defs.Count)
                 {
                     var def = (JObject)defs[matIndex];
+                    // Constant opacity below one means a genuinely see-through surface --
+                    // a geometry shell, glass, a tear film. Blended rather than clipped:
+                    // there is no cutout here, the whole surface is faint.
+                    if (color.a < 0.999f && def.Value<bool?>("cutout") != true) MakeTransparent(m);
                     // A surface with an opacity map is a cutout: eyelashes and tear films
                     // are mostly hole, and rendering them opaque is what turns lashes into
                     // black slabs. Clipping rather than blending keeps them sorting-free.
@@ -818,6 +828,21 @@ namespace DazVrBridge
                 if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", texture);
                 if (m.HasProperty("_MainTex")) m.SetTexture("_MainTex", texture);
             }
+        }
+
+        // URP's transparent setup, which is a set of properties and keywords rather than
+        // one switch; the inspector writes all of this when you change Surface Type.
+        static void MakeTransparent(Material m)
+        {
+            m.SetFloat("_Surface", 1f);
+            m.SetFloat("_Blend", 0f);
+            m.SetFloat("_ZWrite", 0f);
+            m.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            m.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            m.SetFloat("_AlphaClip", 0f);
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            m.DisableKeyword("_ALPHATEST_ON");
+            m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         }
 
         static Shader DefaultShader()

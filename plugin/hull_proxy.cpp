@@ -208,15 +208,15 @@ bool bakeHullProxy( DzNode* node, const DzNode* space, const QStringList &figure
 	{
 		for ( int segment = 0; segment < c_segments; ++segment )
 		{
-			// Leave a hole where no strand pointed. Two corners of four keeps the shell
-			// continuous through thin patches while still opening over a face, and it is
-			// what makes this read as hair rather than as a helmet.
+			// Leave a hole where no strand pointed. Three corners of four, tested against
+			// real hair: two left the shell ragged where it thinned, and it is the
+			// difference between hair and a helmet.
 			const int s1 = ( segment + 1 ) % c_segments;
 			const int covered = ( seen[ cell( ring, segment ) ] ? 1 : 0 )
 				+ ( seen[ cell( ring, s1 ) ] ? 1 : 0 )
 				+ ( seen[ cell( ring + 1, segment ) ] ? 1 : 0 )
 				+ ( seen[ cell( ring + 1, s1 ) ] ? 1 : 0 );
-			if ( covered < 2 )
+			if ( covered < 3 )
 			{
 				continue;
 			}

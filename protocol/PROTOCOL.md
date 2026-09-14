@@ -148,7 +148,9 @@ root bone happens to be. A node with nothing to approximate still reports `mesh_
 
 **`materials` — JSON.** `{ materials: [ { index, name, base_color:[r,g,b] 0–1,
 opacity_map: path|null, color_map: path|null, base_tex: hash|null, cutout: true?,
-cutoff, normal_map: path|null, normal_tex: hash|null, normal_scale } ] }`.
+cutoff, normal_map: path|null, normal_tex: hash|null, normal_scale, opacity, two_sided } ] }`.
+`opacity` is the surface constant, absent when fully opaque; below one the client blends
+rather than clips, since the whole surface is faint rather than holed.
 The map paths are on the Daz machine and are there for diagnostics only; `base_tex` is
 the asset hash the client actually asks for. `cutout` marks a surface whose opacity map
 makes it alpha-tested, and `cutoff` is where that test sits — the mip chain is built to

@@ -149,6 +149,16 @@ QJsonObject bakeMaterials( const DzShape* shape, const BakeOptions &opts, QList<
 		const QColor c = mat->getDiffuseColor().getValue();
 		m[ "base_color" ] = QJsonArray{ c.redF(), c.greenF(), c.blueF() };
 
+		// Constant opacity, which is separate from any opacity map and was never read.
+		// A geometry shell sits at a few percent and had been rendering as an opaque
+		// second skin over its figure -- the same omission hides anything behind glass,
+		// a tear film or sheer fabric.
+		const double baseOpacity = mat->getBaseOpacity();
+		if ( baseOpacity < 0.999 )
+		{
+			m[ "opacity" ] = baseOpacity;
+		}
+
 		// Paths stay for diagnostics; the hash is what the client asks for. Colour and
 		// opacity merge into one texture, because Daz keeps opacity in a separate
 		// greyscale file and a GPU wants it as the colour map's alpha.
