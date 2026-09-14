@@ -181,11 +181,12 @@ namespace DazVrBridge
             var bone = fig.Bones[boneIndex];
             var axisWorld = AxisWorld(fig, boneIndex, axis);
 
-            var b = fig.BoneJson[boneIndex];
-            var segFigure = DazSpace.Pos(b["end"]) - DazSpace.Pos(b["origin"]);
-            if (segFigure.sqrMagnitude > 1e-8f)
+            // SegLocal is cached at load; reading it from the manifest JSON here allocated
+            // on every call.
+            var seg = fig.SegLocal[boneIndex];
+            if (seg.sqrMagnitude > 1e-8f)
             {
-                var boneDir = (bone.rotation * (Quaternion.Inverse(fig.OrientUnity[boneIndex]) * segFigure)).normalized;
+                var boneDir = (bone.rotation * seg).normalized;
                 if (Mathf.Abs(Vector3.Dot(axisWorld, boneDir)) > 0.7f) return "twist";
             }
 
@@ -206,18 +207,32 @@ namespace DazVrBridge
             var even = (i + 1) % 3 == j;
             var e = even ? 1f : -1f;
 
-            // Rotation matrix, row-major, from a Hamilton quaternion.
+            // Rotation matrix, row-major, from a Hamilton quaternion. Held in a fixed-size
+            // struct rather than a float[3,3]: this runs for every bone of every handle,
+            // and the array was the single largest source of garbage in the client.
             float x = q.x, y = q.y, z = q.z, w = q.w;
-            var m = new float[3, 3];
-            m[0, 0] = 1f - 2f * (y * y + z * z); m[0, 1] = 2f * (x * y - z * w);       m[0, 2] = 2f * (x * z + y * w);
-            m[1, 0] = 2f * (x * y + z * w);      m[1, 1] = 1f - 2f * (x * x + z * z);  m[1, 2] = 2f * (y * z - x * w);
-            m[2, 0] = 2f * (x * z - y * w);      m[2, 1] = 2f * (y * z + x * w);       m[2, 2] = 1f - 2f * (x * x + y * y);
+            Mat3 m;
+            m.M00 = 1f - 2f * (y * y + z * z); m.M01 = 2f * (x * y - z * w);      m.M02 = 2f * (x * z + y * w);
+            m.M10 = 2f * (x * y + z * w);      m.M11 = 1f - 2f * (x * x + z * z); m.M12 = 2f * (y * z - x * w);
+            m.M20 = 2f * (x * z - y * w);      m.M21 = 2f * (y * z + x * w);      m.M22 = 1f - 2f * (x * x + y * y);
 
             var result = Vector3.zero;
-            Set(ref result, j, Mathf.Asin(Mathf.Clamp(e * m[i, k], -1f, 1f)) * Mathf.Rad2Deg);
-            Set(ref result, i, Mathf.Atan2(-e * m[j, k], m[k, k]) * Mathf.Rad2Deg);
-            Set(ref result, k, Mathf.Atan2(-e * m[i, j], m[i, i]) * Mathf.Rad2Deg);
+            Set(ref result, j, Mathf.Asin(Mathf.Clamp(e * m.Get(i, k), -1f, 1f)) * Mathf.Rad2Deg);
+            Set(ref result, i, Mathf.Atan2(-e * m.Get(j, k), m.Get(k, k)) * Mathf.Rad2Deg);
+            Set(ref result, k, Mathf.Atan2(-e * m.Get(i, j), m.Get(i, i)) * Mathf.Rad2Deg);
             return result;
+        }
+
+        struct Mat3
+        {
+            public float M00, M01, M02, M10, M11, M12, M20, M21, M22;
+
+            public float Get(int row, int col)
+            {
+                if (row == 0) return col == 0 ? M00 : col == 1 ? M01 : M02;
+                if (row == 1) return col == 0 ? M10 : col == 1 ? M11 : M12;
+                return col == 0 ? M20 : col == 1 ? M21 : M22;
+            }
         }
 
         static int Axis(char c) => c == 'X' || c == 'x' ? 0 : (c == 'Y' || c == 'y' ? 1 : 2);

@@ -19,6 +19,7 @@ namespace DazVrBridge
         static readonly Dictionary<string, Slot> Slots = new Dictionary<string, Slot>();
         static readonly double ToMs = 1000.0 / Stopwatch.Frequency;
         static int _frames;
+        static int _gcAtReset = -1;
 
         public static long Begin() => Enabled ? Stopwatch.GetTimestamp() : 0L;
 
@@ -45,6 +46,14 @@ namespace DazVrBridge
                 sb.Append($"  {kv.Key,-18} {kv.Value.Ms / _frames,7:F3} ms/frame   {(float)kv.Value.Calls / _frames,6:F1} calls/frame\n");
             }
             sb.Append($"  {"TOTAL",-18} {total / _frames,7:F3} ms/frame\n");
+
+            // Time is not the whole story: garbage is cheap to make and expensive to
+            // collect, and a collection lands as a frame spike rather than as cost here.
+            if (_gcAtReset >= 0)
+            {
+                var collections = System.GC.CollectionCount(0) - _gcAtReset;
+                sb.Append($"  gen-0 collections  {collections,7}  ({(float)collections / _frames * 1000f:F1} per 1000 frames)\n");
+            }
             sb.Append("  (anything the bridge does not do is Unity, XR submission, or waiting on the headset)");
             return sb.ToString();
         }
@@ -53,6 +62,7 @@ namespace DazVrBridge
         {
             Slots.Clear();
             _frames = 0;
+            _gcAtReset = System.GC.CollectionCount(0);
         }
     }
 }

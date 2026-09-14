@@ -138,10 +138,14 @@ namespace DazVrBridge
                 if (!full && h.Current == BoneHandle.State.Idle) continue;
 
                 var held = h.Current == BoneHandle.State.Grabbed;
-                var forward = RigProfile.Load(h.Figure.Rig).ForwardOf(h.Figure.Go.transform);
 
+                // Nothing in this loop may allocate: it runs for every bone of every
+                // handle and was the client's largest source of garbage, which showed up
+                // as 8 ms GC spikes rather than as frame time.
                 var pinned = 0f;
-                string text = null;
+                var pinnedBone = -1;
+                var pinnedAxis = 0;
+                var pinnedStatus = default(LimitStatus);
                 foreach (var bone in h.ControlledBones)
                 {
                     var status = DazEuler.Check(loader, h.Figure, bone);
@@ -152,31 +156,30 @@ namespace DazVrBridge
                     // A handle you are not holding only reddens when it is genuinely past
                     // a limit (clamping off). Merely resting against one is normal.
                     if (!held && status.Worst <= 0.5f) continue;
+
                     pinned = p;
-
+                    pinnedBone = bone;
                     var axisName = status.WorstAxis;
-                    var axis = axisName == "x" ? 0 : axisName == "y" ? 1 : 2;
-                    var value = axis == 0 ? status.Euler.x : axis == 1 ? status.Euler.y : status.Euler.z;
-                    var min = axis == 0 ? h.Figure.LimitMin[bone].x : axis == 1 ? h.Figure.LimitMin[bone].y : h.Figure.LimitMin[bone].z;
-                    var max = axis == 0 ? h.Figure.LimitMax[bone].x : axis == 1 ? h.Figure.LimitMax[bone].y : h.Figure.LimitMax[bone].z;
-                    var id = h.Figure.BoneJson[bone].Value<string>("id");
-                    var kind = DazEuler.AxisKind(h.Figure, bone, axis, forward);
-                    var word = status.Worst > 0.5f ? "past" : "at";
-                    text = $"{id} {kind} {value:F0}° {word} [{min:F0}, {max:F0}]";
-
-                    // Hysteresis: it takes a firm pin to appear and a clear release to go.
-                    if (held && p > (_rodOn ? 0.3f : 0.75f))
-                    {
-                        _rodWanted = true;
-                        _rodPos = h.Figure.Bones[bone].position;
-                        _rodDir = DazEuler.AxisWorld(h.Figure, bone, axis);
-                    }
+                    pinnedAxis = axisName == "x" ? 0 : axisName == "y" ? 1 : 2;
+                    pinnedStatus = status;
                 }
+
                 _pinned[i] = pinned;
-                // Only the handle in your hand explains itself on the HUD; the rest would
-                // just be a wall of bones that happen to rest against a limit.
-                _pinnedText[i] = held ? text : null;
                 h.SetOverLimit(pinned);
+
+                if (!held || pinnedBone < 0) { _pinnedText[i] = null; continue; }
+
+                // Hysteresis: it takes a firm pin to appear and a clear release to go.
+                if (pinned > (_rodOn ? 0.3f : 0.75f))
+                {
+                    _rodWanted = true;
+                    _rodPos = h.Figure.Bones[pinnedBone].position;
+                    _rodDir = DazEuler.AxisWorld(h.Figure, pinnedBone, pinnedAxis);
+                }
+
+                // Only built when it will actually be shown: the string, and the axis
+                // naming behind it, are the expensive part.
+                _pinnedText[i] = showLimitText ? Describe(h.Figure, pinnedBone, pinnedAxis, pinnedStatus) : null;
             }
 
             UpdateLimitRod();
@@ -192,6 +195,17 @@ namespace DazVrBridge
             for (var i = 0; i < _violations.Count && i < 4; i++) lines.Add(_violations[i].text);
             if (_violations.Count > 4) lines.Add($"+{_violations.Count - 4} more");
             LimitText = "at Daz limits:\n" + string.Join("\n", lines);
+        }
+
+        string Describe(SceneLoader.LoadedFigure fig, int bone, int axis, LimitStatus status)
+        {
+            var value = axis == 0 ? status.Euler.x : axis == 1 ? status.Euler.y : status.Euler.z;
+            var min = axis == 0 ? fig.LimitMin[bone].x : axis == 1 ? fig.LimitMin[bone].y : fig.LimitMin[bone].z;
+            var max = axis == 0 ? fig.LimitMax[bone].x : axis == 1 ? fig.LimitMax[bone].y : fig.LimitMax[bone].z;
+            var forward = RigProfile.Load(fig.Rig).ForwardOf(fig.Go.transform);
+            var kind = DazEuler.AxisKind(fig, bone, axis, forward);
+            var word = status.Worst > 0.5f ? "past" : "at";
+            return $"{fig.BoneId[bone]} {kind} {value:F0}° {word} [{min:F0}, {max:F0}]";
         }
 
         // A rod through the bone along the rotation axis that ran out: lying along the
