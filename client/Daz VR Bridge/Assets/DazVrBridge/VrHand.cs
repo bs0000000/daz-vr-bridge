@@ -51,7 +51,7 @@ namespace DazVrBridge
         GameObject _vis;
         Renderer _visRenderer;
         Color _visColor;
-        readonly MaterialPropertyBlock _visBlock = new MaterialPropertyBlock();
+        MaterialPropertyBlock _visBlock;
 
         SceneLoader _loader;
         void Start() { _loader = FindAnyObjectByType<SceneLoader>(); }
@@ -62,6 +62,9 @@ namespace DazVrBridge
 
         void Awake()
         {
+            // UnityEngine objects cannot be created by a MonoBehaviour field initializer;
+            // Awake is the first safe place to allocate the reusable property block.
+            _visBlock = new MaterialPropertyBlock();
             var hand = side == Side.Left ? "LeftHand" : "RightHand";
             _position = new InputAction($"{hand}/position", binding: $"<XRController>{{{hand}}}/devicePosition");
             _rotation = new InputAction($"{hand}/rotation", binding: $"<XRController>{{{hand}}}/deviceRotation");
