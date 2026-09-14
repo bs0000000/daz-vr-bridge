@@ -49,6 +49,7 @@ namespace DazVrBridge
             // it is subscribed before the first Pump() delivers the welcome. Drop an
             // EditSync in the scene yourself if you want to change the bindings.
             if (!FindAnyObjectByType<EditSync>()) gameObject.AddComponent<EditSync>();
+            if (!FindAnyObjectByType<StartScreen>()) gameObject.AddComponent<StartScreen>();
             if (!FindAnyObjectByType<DeskSync>()) gameObject.AddComponent<DeskSync>();
             if (!FindAnyObjectByType<BindingLabels>()) gameObject.AddComponent<BindingLabels>();
             if (!FindAnyObjectByType<PoseTakes>()) gameObject.AddComponent<PoseTakes>();
@@ -57,6 +58,16 @@ namespace DazVrBridge
 
         void Start()
         {
+            // The start screen connects when it is ready, so it can apply saved settings
+            // first rather than have a connection race the fields that configure it.
+            if (!FindAnyObjectByType<StartScreen>()) ConnectControl();
+        }
+
+        /// Drop whatever is open and dial again with the current host, port and code.
+        public void Reconnect()
+        {
+            Bulk?.Dispose();
+            Control?.Dispose();
             ConnectControl();
         }
 

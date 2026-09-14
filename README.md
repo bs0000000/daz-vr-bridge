@@ -37,6 +37,16 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 - [x] **4 · Posing UX** — world grab/scale (rig-side), carrying the figure by its ring, two-bone IK on arms and legs with Daz joint limits enforced live, forearm-roll twist recovery, prop and figure contact with spatial and haptic feedback, Daz undo/redo, live node-list refresh, and an in-VR settings menu. *Mirror posing remains deferred.*
 - [ ] 5 · v2 options
 
+## Getting connected
+
+The setup screen is on the monitor, not in the headset: a host address and a six-digit pairing code are
+typed, and this machine has a keyboard attached to it already. It carries the connection details and the
+options that decide what gets baked -- textures, texture size, bones per vertex, strand-hair approximation,
+and the region radius -- which are deliberately *not* on the wheel: everything there is live, while these
+cost a full re-bake and re-download, and sitting beside a Connect button says so. Settings are remembered.
+
+The screen gets out of the way once a scene is up, and comes back if the connection drops.
+
 ## VR controls
 
 - **Trigger:** grab a bone or scene object. Inside the wheel, a tap applies a toggle or opens a page without closing.
