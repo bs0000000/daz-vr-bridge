@@ -308,7 +308,7 @@ void addTextureAssets( BakeResult &result, const QList<TextureRef> &textures )
 // Bakes one node's mesh and attaches the asset hashes to its manifest entry.
 // `space` is the node whose local frame the positions use (see bakeNodeMesh).
 void bakeMeshInto( DzNode* node, const DzNode* space, QJsonObject &entry, const QStringList &figureBones,
-	const BakeOptions &opts, BakeResult &result )
+	const BakeOptions &opts, BakeResult &result, DzSkeleton* skeleton = nullptr )
 {
 	MeshChunks chunks;
 	bool ok = bakeNodeMesh( node, space, figureBones, opts, chunks );
@@ -317,8 +317,7 @@ void bakeMeshInto( DzNode* node, const DzNode* space, QJsonObject &entry, const 
 		// Strand hair has no facet mesh, so it used to bake to nothing and the headset
 		// showed a bald figure -- which reads as broken rather than as simplified. Its
 		// vertices still describe a silhouette, and a silhouette is what was missing.
-		chunks.skin.clear();
-		ok = bakeHullProxy( node, space, chunks );
+		ok = bakeHullProxy( node, space, figureBones, skeleton, opts.influences, chunks );
 		if ( ok )
 		{
 			entry[ "approximate" ] = true;
@@ -434,10 +433,10 @@ BakeResult bakeScene( const BakeOptions &opts )
 			{
 				// Followers are expressed in the figure's space: the client parents
 				// them under the figure and skins them with the figure's bones.
-				bakeMeshInto( figure, figure, fe, bones, opts, result );
+				bakeMeshInto( figure, figure, fe, bones, opts, result, figure );
 				for ( DzSkeleton* s : followers )
 				{
-					bakeMeshInto( s, figure, followerEntries[ s ], bones, opts, result );
+					bakeMeshInto( s, figure, followerEntries[ s ], bones, opts, result, figure );
 				}
 			}
 		}

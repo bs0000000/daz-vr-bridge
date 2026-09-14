@@ -4,10 +4,12 @@
 #include <QIODevice>
 #include <QVector>
 
+#include "dzbone.h"
 #include "dzfacetshape.h"
 #include "dznode.h"
 #include "dzobject.h"
 #include "dzshape.h"
+#include "dzskeleton.h"
 #include "dzvertexmesh.h"
 
 #include "mesh_bake.h"
@@ -20,6 +22,7 @@ namespace {
 // Matches the writer in mesh_bake.cpp; a proxy is an ordinary mesh as far as the
 // client is concerned, which is the point -- nothing on that side needs to know.
 const char* c_meshMagic = "DZM1";
+const char* c_skinMagic = "DZS1";
 
 // Coarse enough to stay a silhouette rather than pretend to be strands, fine enough
 // that a ponytail is a bulge and not a sphere.
@@ -98,9 +101,35 @@ void fillAndSmooth( QVector<float> &radius )
 	}
 }
 
+// Whichever of the figure's bones the hull sits nearest. For hair that is the head,
+// and binding to it is what puts the hull where the hair is: a follower's mesh is
+// parented under the figure and skinned with its bones, so an unskinned one lands
+// wherever the root bone happens to be -- a metre out, in the case of a head.
+int nearestBone( DzSkeleton* skeleton, const QStringList &figureBones, const DzVec3 &worldPoint )
+{
+	int best = 0;
+	double bestDistance = -1.0;
+	for ( int i = 0; i < figureBones.size(); ++i )
+	{
+		DzBone* bone = skeleton->findBone( figureBones.at( i ) );
+		if ( !bone )
+		{
+			continue;
+		}
+		const DzVec3 p = bone->getWSPos();
+		const double dx = p.m_x - worldPoint.m_x;
+		const double dy = p.m_y - worldPoint.m_y;
+		const double dz = p.m_z - worldPoint.m_z;
+		const double d = dx * dx + dy * dy + dz * dz;
+		if ( bestDistance < 0.0 || d < bestDistance ) { bestDistance = d; best = i; }
+	}
+	return best;
+}
+
 } // namespace
 
-bool bakeHullProxy( DzNode* node, const DzNode* space, MeshChunks &out )
+bool bakeHullProxy( DzNode* node, const DzNode* space, const QStringList &figureBones,
+	DzSkeleton* skeleton, int influences, MeshChunks &out )
 {
 	DzObject* obj = node->getObject();
 	if ( !obj )
@@ -112,13 +141,23 @@ bool bakeHullProxy( DzNode* node, const DzNode* space, MeshChunks &out )
 	// but it does have vertices, and the shape of the cloud they make is the whole
 	// point here: the silhouette is what is missing from the headset, not the strands.
 	QVector<DzVec3> points;
+	DzVec3 worldCentre( 0.0f, 0.0f, 0.0f );
 	if ( DzVertexMesh* mesh = obj->getCachedGeom() )
 	{
 		const int count = mesh->getNumVertices();
 		points.reserve( count );
 		for ( int i = 0; i < count; ++i )
 		{
-			points.append( worldToNodeLocal( space, mesh->getVertex( i ) ) );
+			// Kept in world as well as node-local: which bone this hull belongs to is a
+			// world-space question, and carrying the centroid along answers it without
+			// transforming anything back afterwards.
+			const DzVec3 world = mesh->getVertex( i );
+			worldCentre.m_x += world.m_x; worldCentre.m_y += world.m_y; worldCentre.m_z += world.m_z;
+			points.append( worldToNodeLocal( space, world ) );
+		}
+		if ( count > 0 )
+		{
+			worldCentre.m_x /= count; worldCentre.m_y /= count; worldCentre.m_z /= count;
 		}
 	}
 	if ( points.size() < 32 )
@@ -186,6 +225,26 @@ bool bakeHullProxy( DzNode* node, const DzNode* space, MeshChunks &out )
 		for ( const Vertex &v : verts ) { ds << v.u << v.v; }
 		for ( quint32 i : indices ) { ds << i; }
 		ds << quint32( 0 ) << quint32( indices.size() / 3 ) << quint16( 0 ) << quint16( 0 );
+	}
+
+	// --- skin chunk: every vertex rigidly on one bone
+	if ( !figureBones.isEmpty() && skeleton )
+	{
+		const quint16 bone = quint16( nearestBone( skeleton, figureBones, worldCentre ) );
+
+		QDataStream ds( &out.skin, QIODevice::WriteOnly );
+		ds.setByteOrder( QDataStream::LittleEndian );
+		ds.setFloatingPointPrecision( QDataStream::SinglePrecision );
+
+		ds.writeRawData( c_skinMagic, 4 );
+		ds << quint32( verts.size() );
+		ds << quint8( influences ) << quint8( 0 ) << quint8( 0 ) << quint8( 0 );
+		for ( int v = 0; v < verts.size(); ++v )
+		{
+			for ( int i = 0; i < influences; ++i ) { ds << ( i == 0 ? bone : quint16( 0 ) ); }
+			for ( int i = 0; i < influences; ++i ) { ds << ( i == 0 ? 1.0f : 0.0f ); }
+		}
+		out.warnings << QString( "bound to %1" ).arg( figureBones.at( bone ) );
 	}
 
 	out.vertices = verts.size();

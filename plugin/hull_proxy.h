@@ -13,11 +13,20 @@
 // on the client knows or needs to know that it is an approximation.
 
 class DzNode;
+class DzSkeleton;
+
+#include <QStringList>
 
 namespace DazVrBridge {
 
 struct MeshChunks;
 
-bool	bakeHullProxy( DzNode* node, const DzNode* space, MeshChunks &out );
+// `figureBones` are the bone ids the skin indices refer to, as for bakeNodeMesh, and
+// `skeleton` the figure those bones belong to. A hull is bound rigidly to whichever of
+// them it sits nearest -- the head, for hair -- which puts it in the right place and
+// carries it when that bone moves. Pass an empty list for a prop, and it ships
+// unskinned in its own space.
+bool	bakeHullProxy( DzNode* node, const DzNode* space, const QStringList &figureBones,
+			DzSkeleton* skeleton, int influences, MeshChunks &out );
 
 } // namespace DazVrBridge

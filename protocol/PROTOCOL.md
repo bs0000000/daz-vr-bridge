@@ -137,7 +137,11 @@ A node whose geometry the bake cannot use — strand-based hair above all — ca
 node's own vertex cloud reaches in each direction from its centre, as a sphere with
 those radii. It keeps a bob a bob and a ponytail a ponytail for a few hundred
 triangles, and it keeps the surface's colour but drops its textures, whose UVs mean
-nothing on a hull. A node with nothing to approximate still reports `mesh_skipped`.
+nothing on a hull. On a follower it also ships a skin binding every vertex rigidly to
+the figure bone nearest its centre -- the head, for hair -- which is what puts it in
+the right place and carries it when that bone moves; a follower's mesh is parented
+under the figure and skinned with its bones, so an unskinned one lands wherever the
+root bone happens to be. A node with nothing to approximate still reports `mesh_skipped`.
 
 **`materials` — JSON.** `{ materials: [ { index, name, base_color:[r,g,b] 0–1,
 opacity_map: path|null, color_map: path|null, base_tex: hash|null, cutout: true?,
