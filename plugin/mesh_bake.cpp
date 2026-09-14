@@ -411,7 +411,9 @@ bool bakeNodeMesh( DzNode* node, const DzNode* space, const QStringList &figureB
 	DzFacetMesh* base = shape ? shape->getFacetMesh() : nullptr;
 	if ( !base )
 	{
-		out.warnings << "no facet mesh";
+		out.warnings << QString( "no facet mesh (node %1, shape %2)" )
+			.arg( node->metaObject()->className() )
+			.arg( anyShape ? anyShape->metaObject()->className() : "none" );
 		return false;
 	}
 

@@ -312,7 +312,7 @@ void bakeMeshInto( DzNode* node, const DzNode* space, QJsonObject &entry, const 
 {
 	MeshChunks chunks;
 	bool ok = bakeNodeMesh( node, space, figureBones, opts, chunks );
-	if ( !ok )
+	if ( !ok && opts.hulls )
 	{
 		// Strand hair has no facet mesh, so it used to bake to nothing and the headset
 		// showed a bald figure -- which reads as broken rather than as simplified. Its
@@ -371,6 +371,7 @@ BakeOptions bakeOptionsFromJson( const QJsonObject &h )
 	o.influences = h.value( "influences" ).toInt( o.influences ) == 8 ? 8 : 4;
 	o.includeHidden = h.value( "include_hidden" ).toBool( o.includeHidden );
 	o.meshes = h.value( "meshes" ).toBool( o.meshes );
+	o.hulls = h.value( "hulls" ).toBool( o.hulls );
 	return o;
 }
 
@@ -527,6 +528,7 @@ BakeResult bakeScene( const BakeOptions &opts )
 	bake[ "tex_max" ] = opts.texMax;
 	bake[ "influences" ] = opts.influences;
 	bake[ "meshes" ] = opts.meshes;
+	bake[ "hulls" ] = opts.hulls;
 	bake[ "ms" ] = double( timer.elapsed() );
 	bake[ "asset_bytes" ] = double( totalBytes );
 	m[ "bake" ] = bake;

@@ -39,7 +39,7 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 |---|---|---|---|
 | `hello` | both | `protocol:1, role, client, session?, code?` | **Phase 0 ✓** |
 | `ping` | control | — | **Phase 0 ✓** |
-| `scene.request` | control | `textures: none\|opacity\|full, tex_max, influences: 4\|8, include_hidden, meshes` | **Phase 1b ✓** |
+| `scene.request` | control | `textures: none\|opacity\|full, tex_max, influences: 4\|8, include_hidden, meshes, hulls` — `hulls` approximates geometry the bake cannot use, see below | **Phase 1b ✓** |
 | `asset.request` | bulk | `hashes: [...]` | **Phase 1b ✓** |
 | `pose.commit` | control | `figure, bones: [[id, x, y, z, w] or [id, x, y, z, w, px, py, pz], …], label, selftest?` — each bone's target **world** rotation in Daz's quaternion sense, optionally with a world position in cm (the root carried by its ring; Daz stores it as the bone's translation via `setWSPos`); applied parents-first via `DzNode::setWSRot` as one undo step named `label`. Confirmation is the `pose.state` that follows (~100 ms), carrying whatever limits clamped. | **Phase 2a ✓** (position: Phase 4) |
 | `selftest.begin` | control | `figure` | **Phase 2a ✓** — plugin snapshots the figure's Euler controls and sends a `pose.state` with `selftest: true`; the client echoes it as `pose.commit {selftest: true}`; plugin applies it without undo, compares, restores, answers `selftest.result`. |
@@ -144,7 +144,10 @@ also ships a skin binding every vertex rigidly to
 the figure bone nearest its centre -- the head, for hair -- which is what puts it in
 the right place and carries it when that bone moves; a follower's mesh is parented
 under the figure and skinned with its bones, so an unskinned one lands wherever the
-root bone happens to be. A node with nothing to approximate still reports `mesh_skipped`.
+root bone happens to be. A node with nothing to approximate still reports `mesh_skipped`, as does one whose
+vertex count matches its own figure's: that is a geometry shell, a copy of the figure
+offset outward, and hulling it wraps the character in a faceted body-shaped shell
+instead of adding anything. `hulls: false` turns the whole mechanism off.
 
 **`materials` — JSON.** `{ materials: [ { index, name, base_color:[r,g,b] 0–1,
 opacity_map: path|null, color_map: path|null, base_tex: hash|null, cutout: true?,

@@ -29,6 +29,9 @@ namespace DazVrBridge
                  "1024 is about 0.7 MB per map in BC1 with mips, 2048 is four times that. Part of a " +
                  "texture's asset hash, so changing it fetches fresh maps rather than reusing cached ones.")]
         public int texMax = 1024;
+        [Tooltip("Approximate geometry the bake cannot use -- strand hair above all -- with a hull " +
+                 "measured from its vertices. Off: such nodes simply do not appear.")]
+        public bool hullProxies = true;
         [Range(4, 8)] public int influences = 4;
 
         [Header("Display")]
@@ -158,6 +161,7 @@ namespace DazVrBridge
                 ["t"] = "scene.request",
                 ["textures"] = textures,
                 ["tex_max"] = texMax,
+                ["hulls"] = hullProxies,
                 ["influences"] = influences,
                 ["meshes"] = true,
             });

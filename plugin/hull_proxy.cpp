@@ -167,6 +167,27 @@ bool bakeHullProxy( DzNode* node, const DzNode* space, const QStringList &figure
 		return false;
 	}
 
+	// A geometry shell is a copy of its figure's mesh, offset outward. It has no shape
+	// of its own, so it lands here exactly as strand hair does -- and hulling it wraps
+	// the character in a faceted body-shaped shell with the arms merged into the torso.
+	// Nothing is gained by approximating a silhouette that is already the figure's, and
+	// a shell is nearly invisible in Daz anyway; matching vertex counts is what says so.
+	if ( space && space != node )
+	{
+		if ( DzObject* target = const_cast<DzNode*>( space )->getObject() )
+		{
+			if ( DzVertexMesh* targetMesh = target->getCachedGeom() )
+			{
+				if ( targetMesh->getNumVertices() == points.size() )
+				{
+					out.warnings << QString( "not approximated: %1 vertices matches its figure, so this is a shell of it" )
+						.arg( points.size() );
+					return false;
+				}
+			}
+		}
+	}
+
 	DzVec3 centre( 0.0f, 0.0f, 0.0f );
 	for ( const DzVec3 &p : points )
 	{

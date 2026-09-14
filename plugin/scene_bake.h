@@ -21,6 +21,7 @@ struct BakeOptions
 	int		influences = 4;			// skin influences per vertex, 4 or 8
 	bool	includeHidden = false;
 	bool	meshes = true;			// false: manifest only (skeletons, transforms)
+	bool	hulls = true;			// approximate geometry the bake cannot use (strand hair)
 };
 
 struct BakedAsset
