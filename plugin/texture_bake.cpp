@@ -393,6 +393,12 @@ QByteArray produceTexture( const TextureRef &ref, QString* errorOut )
 		}
 	}
 
+	// QImage puts scanline zero at the TOP; Unity's raw texture data puts row zero at
+	// the BOTTOM, the same way its UVs run. Uploading QImage order unflipped turns
+	// every map upside down -- lips on the forehead, which is exactly how it looked.
+	// Flipping the source once is enough: every mip is scaled from it.
+	image = image.mirrored( false, true );
+
 	QByteArray out;
 	out.reserve( int( ref.size ) );
 	out.append( kMagic, 4 );
