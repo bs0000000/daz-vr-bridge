@@ -81,17 +81,25 @@ namespace DazVrBridge
             BridgeProfiler.EndFrame();
             if (All.Count == 0) return;
 
+            // Visibility first: the limit scan uses it to skip handles you cannot see,
+            // which with several figures in a scene is nearly all of them.
+            if (showHandles)
+            {
+                UnityEngine.Profiling.Profiler.BeginSample("Bridge.HandleFade");
+                var tv = BridgeProfiler.Begin();
+                UpdateVisibility();
+                BridgeProfiler.End("handle fade", tv);
+                UnityEngine.Profiling.Profiler.EndSample();
+            }
+
             if (showLimits)
             {
+                UnityEngine.Profiling.Profiler.BeginSample("Bridge.LimitScan");
                 var tl = BridgeProfiler.Begin();
                 UpdateLimits();
                 BridgeProfiler.End("limit scan", tl);
+                UnityEngine.Profiling.Profiler.EndSample();
             }
-            if (!showHandles) return;
-
-            var tv = BridgeProfiler.Begin();
-            UpdateVisibility();
-            BridgeProfiler.End("handle fade", tv);
         }
 
         void UpdateVisibility()
@@ -134,8 +142,13 @@ namespace DazVrBridge
             {
                 var h = All[i];
                 if (!h || h.ControlledBones == null) continue;
-                // The held handle matters every frame; everything else is just the display.
-                if (!full && h.Current == BoneHandle.State.Idle) continue;
+                // The held handle matters every frame; everything else is just the display,
+                // and a handle faded out of sight has no display to update.
+                if (h.Current == BoneHandle.State.Idle && (!full || !h.Visible))
+                {
+                    if (_pinned[i] != 0f) { _pinned[i] = 0f; _pinnedText[i] = null; h.SetOverLimit(0f); }
+                    continue;
+                }
 
                 var held = h.Current == BoneHandle.State.Grabbed;
 

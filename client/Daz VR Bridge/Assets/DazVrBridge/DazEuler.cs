@@ -63,8 +63,10 @@ namespace DazVrBridge
             var o = fig.OrientDaz[boneIndex];
             var e = o * Conj(qLocal) * Conj(o);
 
-            var order = fig.RotOrder[boneIndex];
-            status.Euler = Decompose(e, Reverse(order));
+            // Axis indices and parity are cached at load. Deriving them here meant
+            // building a reversed order string on every call — one allocation per bone
+            // per scan, which with five figures is most of the client's garbage.
+            status.Euler = Decompose(e, fig.AxisI[boneIndex], fig.AxisJ[boneIndex], fig.AxisK[boneIndex], fig.AxisParity[boneIndex]);
             status.Valid = true;
 
             var min = fig.LimitMin[boneIndex];
@@ -92,7 +94,7 @@ namespace DazVrBridge
             var order = fig.RotOrder[boneIndex];
             var e = AxisQuat(order[2], Component(deg, order[2]))
                   * AxisQuat(order[1], Component(deg, order[1]))
-                  * AxisQuat(order[0], Component(deg, order[0]));
+                  * AxisQuat(order[0], Component(deg, order[0])); // E = R_a3 R_a2 R_a1
 
             var o = fig.OrientDaz[boneIndex];
             var qLocal = Conj(o) * Conj(e) * o;
@@ -197,15 +199,20 @@ namespace DazVrBridge
 
         static Quaternion Conj(Quaternion q) => new Quaternion(-q.x, -q.y, -q.z, q.w);
 
-        static string Reverse(string order) => $"{order[2]}{order[1]}{order[0]}";
+        // The decomposition runs in the REVERSED rotation order; SceneLoader caches the
+        // resulting axis indices and parity per bone via this.
+        public static void DecomposeAxes(string rotOrder, out int i, out int j, out int k, out float parity)
+        {
+            i = Axis(rotOrder[2]);
+            j = Axis(rotOrder[1]);
+            k = Axis(rotOrder[0]);
+            parity = (i + 1) % 3 == j ? 1f : -1f;
+        }
 
         // Tait-Bryan extraction for R = R_i(a) R_j(b) R_k(c), axes i, j, k distinct.
         // Returns degrees keyed by axis, so the caller gets X/Y/Z whatever the order.
-        static Vector3 Decompose(Quaternion q, string order)
+        static Vector3 Decompose(Quaternion q, int i, int j, int k, float e)
         {
-            int i = Axis(order[0]), j = Axis(order[1]), k = Axis(order[2]);
-            var even = (i + 1) % 3 == j;
-            var e = even ? 1f : -1f;
 
             // Rotation matrix, row-major, from a Hamilton quaternion. Held in a fixed-size
             // struct rather than a float[3,3]: this runs for every bone of every handle,
@@ -235,7 +242,7 @@ namespace DazVrBridge
             }
         }
 
-        static int Axis(char c) => c == 'X' || c == 'x' ? 0 : (c == 'Y' || c == 'y' ? 1 : 2);
+        public static int Axis(char c) => c == 'X' || c == 'x' ? 0 : (c == 'Y' || c == 'y' ? 1 : 2);
 
         static void Set(ref Vector3 v, int axis, float value)
         {

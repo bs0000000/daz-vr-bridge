@@ -24,6 +24,8 @@ namespace DazVrBridge
         public State Current { get; private set; } = State.Idle;
         public bool IsGrabbed => Current == State.Grabbed;
         public int Priority => 0;
+        // Faded out entirely: its colour cannot be seen, so it need not be scanned.
+        public bool Visible => _alpha > 0.01f || Current != State.Idle;
 
         Renderer _renderer;
         float _alpha = 1f;
@@ -633,6 +635,8 @@ namespace DazVrBridge
         // One block reused for every handle: allocating a MaterialPropertyBlock per call
         // meant ~26 allocations a frame once the distance fade was continuously changing.
         static MaterialPropertyBlock _block;
+        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        static readonly int ColorId = Shader.PropertyToID("_Color");
 
         void Apply()
         {
@@ -647,8 +651,8 @@ namespace DazVrBridge
             if (!_renderer.enabled) return;
             c.a = a;
             _block.Clear();
-            _block.SetColor("_BaseColor", c);
-            _block.SetColor("_Color", c);
+            _block.SetColor(BaseColorId, c);
+            _block.SetColor(ColorId, c);
             _renderer.SetPropertyBlock(_block);
         }
 

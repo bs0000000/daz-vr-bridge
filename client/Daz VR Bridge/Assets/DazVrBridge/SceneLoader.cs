@@ -60,6 +60,8 @@ namespace DazVrBridge
             public int[] ParentBone;                // -1 when the parent is not a bone
             public string[] BoneId;
             public Vector3[] SegLocal;              // unit vector along the bone, in its own frame
+            public int[] AxisI, AxisJ, AxisK;       // Euler decomposition axes (reversed order)
+            public float[] AxisParity;
         }
         public readonly Dictionary<string, LoadedFigure> Figures = new Dictionary<string, LoadedFigure>();
 
@@ -380,6 +382,10 @@ namespace DazVrBridge
             fig.ParentBone = new int[n];
             fig.BoneId = new string[n];
             fig.SegLocal = new Vector3[n];
+            fig.AxisI = new int[n];
+            fig.AxisJ = new int[n];
+            fig.AxisK = new int[n];
+            fig.AxisParity = new float[n];
 
             for (var i = 0; i < n; i++)
             {
@@ -404,6 +410,8 @@ namespace DazVrBridge
 
                 var parent = b.Value<string>("parent");
                 fig.ParentBone[i] = parent != null && fig.ByName.TryGetValue(parent, out var pi) ? pi : -1;
+
+                DazEuler.DecomposeAxes(fig.RotOrder[i], out fig.AxisI[i], out fig.AxisJ[i], out fig.AxisK[i], out fig.AxisParity[i]);
 
                 fig.BoneId[i] = b.Value<string>("id");
                 var segFigure = DazSpace.Pos(b["end"]) - DazSpace.Pos(b["origin"]);
