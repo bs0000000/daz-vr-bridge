@@ -94,19 +94,27 @@ hard on commit.
   forearm and shin reads as permanently pinned.
 - **Show Limit Gizmo** (default on) draws a red rod through the pinned bone along the
   rotation that ran out: **along** the bone means twist, **across** it means bend. Which
-  joint and which motion, at a glance, without reading.
+  joint and which motion, at a glance, without reading. A clamped joint sits exactly on
+  its limit, so the raw test flickers every frame — the rod needs a firm pin to appear
+  and a clear release to go, stays up half a second after, and eases between bones.
 - **Show Limit Text** (default **off**) also spells it out on the HUD,
   `l_upperarm twist 90° at [-40, 90]`. Reading while posing is a nuisance, so it's opt-in.
 
 **Surfaces** (`BoneHandles` → Surface Snap; `SceneLoader` → Prop Mesh Colliders). Hands
 and feet do not pass through props. At each grab the hand or foot is **measured as it
-currently is** — the bounds of the skinned vertices belonging to that bone and its fingers
-— and that oriented box is what sweeps against surfaces. A sphere was the obvious proxy
-and the wrong one: big enough not to sink a fist means an open palm floats, because a flat
-hand is a thin slab. Snap Radius is only the fallback for a node with no mesh.
+currently is**: the skinned vertices belonging to that bone and its fingers, reduced to
+the outermost one in each of 26 directions. Those extremes sweep individually, and the
+first to touch stops the hand.
 
-The box sweeps from where it was to where your controller wants it, stops at the first
-surface and slides along it; lifting frees it at once.
+Two simpler proxies were tried and both failed for the same reason — a hand is not a blob.
+A sphere large enough not to sink a fist floats an open palm; an oriented box is a loose
+fit whose *corner* touches first whenever the hand meets a surface at an angle, holding it
+10–15 cm clear. Only the real surface points behave at every angle. `Snap Radius` now only
+applies to a node with no mesh to measure.
+
+Only motion *into* a surface is blocked, so a hand resting on something can always lift
+off. (An earlier "already intersecting, give up" guard made snapping switch itself off
+whenever the proxy overlapped anything, which read as the snap being impossible to hit.)
 
 Touching down is reported three ways, none of which is text: a **cyan disc** lies on the
 surface at the contact point, the controller gives a **short tick**, and a joint running

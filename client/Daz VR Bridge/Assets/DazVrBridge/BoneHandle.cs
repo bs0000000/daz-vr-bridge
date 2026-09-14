@@ -61,14 +61,14 @@ namespace DazVrBridge
         public bool SurfaceSnap = true;
         public float SnapRadius = 0.03f;
 
-        // Contact proxy. A sphere is a decent fist and a poor flat hand — a hand is a thin
-        // slab, so a sphere big enough not to sink a fist holds an open palm well off the
-        // surface. At grab time the actual skinned hand is measured and the sweep uses
-        // that oriented box instead, falling back to a sphere only if there is no mesh.
-        Vector3 _contactLocal;      // box centre (or the handle offset) in bone space
-        Vector3 _boxHalfLocal;
-        bool _hasBox;
-        Vector3 _lastContact;
+        // Contact proxy. Neither a sphere nor a box works: a sphere big enough for a fist
+        // floats an open palm, and a box is a loose fit whose corner hits first whenever
+        // the hand meets a surface at an angle. So the real surface is used — at grab
+        // time the outermost vertices of the hand (and its fingers) are taken as contact
+        // samples, and each one sweeps individually.
+        Vector3 _contactLocal;      // the handle offset; only the sphere fallback uses it
+        Vector3[] _samplesLocal;    // contact points in the bone's frame
+        Vector3 _lastEffector;
         bool _onSurface;
         Vector3 _contactPoint, _contactNormal;
         public bool OnSurface => _onSurface;
@@ -204,8 +204,8 @@ namespace DazVrBridge
             _offsetRot = Quaternion.Inverse(hand.rotation) * Bone.rotation;
             _bendHint = Vector3.zero; // the solver seeds it from the limb's current bend
             if (_ikShoulder >= 0) _shoulderRot0 = Figure.Bones[_ikShoulder].rotation;
-            if (_ik != null) MeasureContactBox();
-            _lastContact = Bone.position + Bone.rotation * _contactLocal;
+            if (_ik != null) MeasureContactSamples();
+            _lastEffector = Bone.position;
             _onSurface = false;
             _hand = hand ? hand.GetComponent<VrHand>() : null;
             SetState(State.Grabbed);
@@ -232,8 +232,8 @@ namespace DazVrBridge
 
                 // Resolve where the palm/sole may go, then put the joint back under it.
                 var wasOnSurface = _onSurface;
-                _lastContact = ResolveAgainstSurfaces(desiredEffector + targetRot * _contactLocal, targetRot);
-                SolveIk(_lastContact - targetRot * _contactLocal, targetRot);
+                _lastEffector = ResolveAgainstSurfaces(desiredEffector, targetRot);
+                SolveIk(_lastEffector, targetRot);
                 ShowContact();
                 if (_onSurface && !wasOnSurface) _hand?.Pulse(0.35f, 0.03f); // a tick on touching down
                 return;
@@ -258,11 +258,12 @@ namespace DazVrBridge
         // surface and sweep again. So a hand pushed into a couch arm settles on it and
         // then slides along it, and lifting the controller frees it immediately.
         // Measures the hand or foot as it currently is — fingers curled or flat — by
-        // taking the bounds of the skinned vertices that belong to this bone and its
-        // descendants, in the bone's own frame. Once per grab, not per frame.
-        void MeasureContactBox()
+        // taking the skinned vertices that belong to this bone and its descendants and
+        // keeping the outermost one in each of 26 directions. Those extremes are what
+        // touches a surface first, whatever angle the hand meets it at. Once per grab.
+        void MeasureContactSamples()
         {
-            _hasBox = false;
+            _samplesLocal = null;
             if (!SurfaceSnap) return;
 
             SkinnedMeshRenderer smr = null;
@@ -282,9 +283,14 @@ namespace DazVrBridge
             var perVertex = smr.sharedMesh.GetBonesPerVertex();
             var weights = smr.sharedMesh.GetAllBoneWeights();
 
+            // Bone-local, and relative to the bone origin so a sample is just an offset
+            // from the effector the IK drives.
             var toLocal = Bone.worldToLocalMatrix * smr.transform.localToWorldMatrix;
-            var min = Vector3.positiveInfinity;
-            var max = Vector3.negativeInfinity;
+            var dirs = SampleDirections();
+            var best = new Vector3[dirs.Length];
+            var bestDot = new float[dirs.Length];
+            for (var d = 0; d < dirs.Length; d++) bestDot[d] = float.NegativeInfinity;
+
             var found = 0;
             var wi = 0;
             for (var v = 0; v < perVertex.Length && v < verts.Length; v++)
@@ -297,47 +303,88 @@ namespace DazVrBridge
                 }
                 if (!take) continue;
                 var p = toLocal.MultiplyPoint3x4(verts[v]);
-                min = Vector3.Min(min, p);
-                max = Vector3.Max(max, p);
+                if (p.sqrMagnitude > 0.25f) continue; // 50 cm from the joint: not this hand
                 found++;
+                for (var d = 0; d < dirs.Length; d++)
+                {
+                    var dot = Vector3.Dot(p, dirs[d]);
+                    if (dot > bestDot[d]) { bestDot[d] = dot; best[d] = p; }
+                }
             }
             perVertex.Dispose();
             weights.Dispose();
             Destroy(baked);
-
             if (found < 8) return;
-            var half = (max - min) * 0.5f;
-            if (half.x > 0.3f || half.y > 0.3f || half.z > 0.3f) return; // implausible; keep the sphere
-            _contactLocal = (min + max) * 0.5f;
-            _boxHalfLocal = Vector3.Max(half, Vector3.one * 0.004f);
-            _hasBox = true;
+
+            // Distinct extremes only; several directions often pick the same fingertip.
+            var unique = new List<Vector3>(dirs.Length);
+            for (var d = 0; d < dirs.Length; d++)
+            {
+                if (bestDot[d] == float.NegativeInfinity) continue;
+                var dup = false;
+                foreach (var u in unique) if ((u - best[d]).sqrMagnitude < 4e-4f) { dup = true; break; }
+                if (!dup) unique.Add(best[d]);
+            }
+            if (unique.Count >= 4) _samplesLocal = unique.ToArray();
         }
 
+        // 6 face + 12 edge + 8 corner directions of a cube.
+        static Vector3[] SampleDirections()
+        {
+            if (_sampleDirs != null) return _sampleDirs;
+            var list = new List<Vector3>(26);
+            for (var x = -1; x <= 1; x++)
+                for (var y = -1; y <= 1; y++)
+                    for (var z = -1; z <= 1; z++)
+                    {
+                        if (x == 0 && y == 0 && z == 0) continue;
+                        list.Add(new Vector3(x, y, z).normalized);
+                    }
+            _sampleDirs = list.ToArray();
+            return _sampleDirs;
+        }
+        static Vector3[] _sampleDirs;
+
+        // Sweeps every contact sample and lets the first one to touch stop the whole hand,
+        // then slides the rest of the motion along that surface. Only motion *into* a
+        // surface is blocked (dot(dir, normal) < 0), so a hand already resting on
+        // something is always free to lift off — no "already stuck" special case, which
+        // is what used to switch snapping off silently.
         Vector3 ResolveAgainstSurfaces(Vector3 desired, Quaternion orientation)
         {
             _onSurface = false;
-            if (!SurfaceSnap || (!_hasBox && SnapRadius <= 0f)) return desired;
+            if (!SurfaceSnap) return desired;
 
-            var motion = desired - _lastContact;
+            var motion = desired - _lastEffector;
             var remaining = motion.magnitude;
-            if (remaining < 1e-5f) return _lastContact;
+            if (remaining < 1e-5f) return _lastEffector;
 
-            // Already intersecting something (a prop moved onto the hand, or the pose
-            // started inside one): do not fight it, or the hand would never get out.
-            var stuck = _hasBox
-                ? Physics.CheckBox(_lastContact, _boxHalfLocal, orientation, ~0, QueryTriggerInteraction.Ignore)
-                : Physics.CheckSphere(_lastContact, SnapRadius, ~0, QueryTriggerInteraction.Ignore);
-            if (stuck) return desired;
-
+            var samples = _samplesLocal;
             var dir = motion / remaining;
-            var pos = _lastContact;
-            const float skin = 0.001f;
+            var pos = _lastEffector;
+            const float skin = 0.002f;
+            var radius = samples != null ? 0.005f : Mathf.Max(0.005f, SnapRadius);
 
             for (var i = 0; i < 3 && remaining > 1e-5f; i++)
             {
-                var blocked = _hasBox
-                    ? Physics.BoxCast(pos, _boxHalfLocal, dir, out var hit, orientation, remaining, ~0, QueryTriggerInteraction.Ignore)
-                    : Physics.SphereCast(pos, SnapRadius, dir, out hit, remaining, ~0, QueryTriggerInteraction.Ignore);
+                var hitDist = remaining;
+                var hitNormal = Vector3.zero;
+                var hitPoint = Vector3.zero;
+                var blocked = false;
+
+                var count = samples?.Length ?? 1;
+                for (var s = 0; s < count; s++)
+                {
+                    var origin = samples != null ? pos + orientation * samples[s] : pos + orientation * _contactLocal;
+                    if (!Physics.SphereCast(origin, radius, dir, out var hit, remaining, ~0, QueryTriggerInteraction.Ignore)) continue;
+                    if (Vector3.Dot(dir, hit.normal) >= 0f) continue;   // leaving, not entering
+                    if (hit.distance >= hitDist) continue;
+                    hitDist = hit.distance;
+                    hitNormal = hit.normal;
+                    hitPoint = hit.point;
+                    blocked = true;
+                }
+
                 if (!blocked)
                 {
                     pos += dir * remaining;
@@ -345,14 +392,14 @@ namespace DazVrBridge
                 }
 
                 _onSurface = true;
-                _contactPoint = hit.point;
-                _contactNormal = hit.normal;
+                _contactPoint = hitPoint;
+                _contactNormal = hitNormal;
 
-                var travelled = Mathf.Max(0f, hit.distance - skin);
+                var travelled = Mathf.Max(0f, hitDist - skin);
                 pos += dir * travelled;
                 remaining -= travelled;
 
-                var slide = Vector3.ProjectOnPlane(dir * remaining, hit.normal);
+                var slide = Vector3.ProjectOnPlane(dir * remaining, hitNormal);
                 remaining = slide.magnitude;
                 if (remaining < 1e-5f) break;
                 dir = slide / remaining;

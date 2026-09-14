@@ -60,10 +60,14 @@ namespace DazVrBridge
         float _nextFullScan;
         readonly List<(string text, float rank)> _violations = new List<(string, float)>();
 
-        // One rod, shown on whichever held bone has run out of range.
+        // One rod, shown on whichever held bone has run out of range. A clamped joint sits
+        // exactly on its limit, so the raw test flickers on and off every frame — it needs
+        // hysteresis to switch, a minimum time on screen, and smoothing so it does not
+        // jump between bones faster than it can be read.
         Transform _limitRod;
-        bool _rodWanted;
+        bool _rodWanted, _rodOn;
         Vector3 _rodPos, _rodDir;
+        float _rodHideAfter;
 
         void Start()
         {
@@ -145,7 +149,8 @@ namespace DazVrBridge
                     var word = status.Worst > 0.5f ? "past" : "at";
                     text = $"{id} {kind} {value:F0}° {word} [{min:F0}, {max:F0}]";
 
-                    if (held && p > 0.6f)
+                    // Hysteresis: it takes a firm pin to appear and a clear release to go.
+                    if (held && p > (_rodOn ? 0.3f : 0.75f))
                     {
                         _rodWanted = true;
                         _rodPos = h.Figure.Bones[bone].position;
@@ -179,7 +184,12 @@ namespace DazVrBridge
         // words.
         void UpdateLimitRod()
         {
-            if (!showLimitGizmo || !_rodWanted)
+            // Stays up for a beat after the pin clears, so a joint you brush against does
+            // not produce a flash you cannot read.
+            if (_rodWanted) _rodHideAfter = Time.time + 0.5f;
+            _rodOn = showLimitGizmo && Time.time < _rodHideAfter;
+
+            if (!_rodOn)
             {
                 if (_limitRod) _limitRod.gameObject.SetActive(false);
                 return;
@@ -201,9 +211,12 @@ namespace DazVrBridge
                 _limitRod = rod.transform;
             }
 
+            var appearing = !_limitRod.gameObject.activeSelf;
             _limitRod.gameObject.SetActive(true);
-            _limitRod.position = _rodPos;
-            _limitRod.up = _rodDir; // the cylinder's axis is its Y
+            // Ease between bones rather than teleporting, so the eye can follow it.
+            var t = appearing ? 1f : 1f - Mathf.Exp(-18f * Time.deltaTime);
+            _limitRod.position = Vector3.Lerp(_limitRod.position, _rodPos, t);
+            _limitRod.up = Vector3.Slerp(_limitRod.up, _rodDir, t); // the cylinder's axis is its Y
         }
 
         void OnDestroy()
