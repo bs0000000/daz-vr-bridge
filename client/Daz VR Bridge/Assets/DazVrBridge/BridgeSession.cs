@@ -50,6 +50,7 @@ namespace DazVrBridge
             // EditSync in the scene yourself if you want to change the bindings.
             if (!FindAnyObjectByType<EditSync>()) gameObject.AddComponent<EditSync>();
             if (!FindAnyObjectByType<DeskSync>()) gameObject.AddComponent<DeskSync>();
+            if (!FindAnyObjectByType<BindingLabels>()) gameObject.AddComponent<BindingLabels>();
             if (!FindAnyObjectByType<PoseTakes>()) gameObject.AddComponent<PoseTakes>();
             if (!FindAnyObjectByType<VrMenu>()) gameObject.AddComponent<VrMenu>();
         }

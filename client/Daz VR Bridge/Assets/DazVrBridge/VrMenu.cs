@@ -196,6 +196,13 @@ namespace DazVrBridge
                 Run = () => _takes?.Capture(),
                 Enabled = () => _takes && _takes.CanCapture,
             };
+            // The tutorial, without a tutorial: what each button does, where the button is.
+            session[2] = new Entry
+            {
+                Label = "Buttons", Kind = Kind.Toggle,
+                Get = () => BindingLabels.Show,
+                Set = v => BindingLabels.Show = v,
+            };
             session[3] = new Entry
             {
                 Label = "Render", Kind = Kind.Action,
@@ -204,9 +211,9 @@ namespace DazVrBridge
                 Enabled = () => _desk && _session && _session.ControlReady && !DeskSync.Rendering,
             };
             session[4] = new Entry { Label = "Back", Kind = Kind.Page, Run = () => SetPage(0) };
-            // The five slots run clockwise from the right, so which one is which is a
-            // position rather than a number to read.
-            var slots = new[] { 2, 5, 6, 7 };
+            // A contiguous arc down the left, so the takes are one region of the wheel
+            // rather than numbers scattered among the actions on the right.
+            var slots = new[] { 5, 6, 7 };
             for (var i = 0; i < slots.Length && i < PoseTakes.SlotCount; i++)
             {
                 var index = i;

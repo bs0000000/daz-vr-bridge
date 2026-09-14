@@ -60,8 +60,17 @@ rather than the word ON, and continuous settings dialled by pushing the hand fur
 every 5% and the value applied live. Page one holds what you reach for mid-pose (undo, redo, prop snapping,
 figure contact, joint clamping, limit rods, scene reload); page two the things you set once (contact gap,
 clavicle share, handle reveal distance, haptic strength, forearm roll assist, contact shapes, life-size reset);
-page three the session: draft mode, Take, and five numbered slots to recall a take from. Settings are
-saved locally.
+page three the session: draft mode, Take, button labels, Render, and an arc of three slots to recall a take
+from. Settings are saved locally.
+
+**Button labels** float what each button does right now beside the controller that has it, and change with
+what the hand is holding -- the trigger reads "grab a bone or object" in space, "release to place" while
+holding, "apply, stay open" inside the wheel. Generated from the same state the bindings read, so they cannot
+go stale, and off by default because reading while posing is a nuisance.
+
+**Render** starts a Daz render of the camera a hand is holding. Daz refuses edits while it renders, so the
+bridge drafts for the duration and commits when it finishes. **Resync** on page one asks Daz for every
+transform, which is a few hundred bytes against a re-bake's whole scene.
 
 **Takes** hold the whole scene's pose -- every figure, and the props they are resting on, since a hand on a
 chair is only a pose while the chair is where it was. Capture costs nothing: the data is what pose.commit
@@ -79,9 +88,8 @@ some other reason.
 
 ## Backlog
 
-- Mirror posing, selection mirroring, per-node resync, and a Genesis 8 profile.
+- Mirror posing and a Genesis 8 profile.
 - A starting screen: host, pairing code and the bake options belong on the desktop window, where typing works.
-- Binding labels on the controllers, which is the tutorial without writing one.
 - A standalone build. Everything so far has been measured in the editor, which is also the only place
   editor-only bugs hide -- the overlay shader was one.
 - See the backlog assessment for the rest: https://claude.ai/code/artifact/8f07cacf-be1c-49c6-8ceb-126895047f1f
