@@ -148,8 +148,10 @@ texture's alpha, and a surface with no colour map gets white RGB so its `base_co
 still tints it.
 
 A texture asset's hash names its **sources' identity** — the map paths, their
-modification times and sizes, and the dimensions and format they would convert under —
-not the converted bytes. That is what lets the manifest list every texture, with its
+modification times and sizes, the dimensions and format they would convert under, and
+a conversion pipeline version — not the converted bytes. The version is there because
+without it a fix to the conversion leaves every client serving stale bytes from a disk
+cache with no way to know they are wrong; bump it whenever the conversion changes. That is what lets the manifest list every texture, with its
 exact byte count, after reading only image headers: describing one costs a header
 read, producing one costs a full decode plus a mip chain plus block compression. The
 plugin produces the bytes when a client first asks for that hash, and keeps them.

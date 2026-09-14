@@ -25,6 +25,10 @@ namespace DazVrBridge
         [Tooltip("none = flat clay; opacity = cutout maps only (eyelashes, tears); full = colour maps too. " +
                  "Textures arrive after the scene is already posable, compressed and mipped by the plugin.")]
         public string textures = "full";
+        [Tooltip("Longest edge a texture is scaled to, in pixels; rounded down to a power of two. " +
+                 "1024 is about 0.7 MB per map in BC1 with mips, 2048 is four times that. Part of a " +
+                 "texture's asset hash, so changing it fetches fresh maps rather than reusing cached ones.")]
+        public int texMax = 1024;
         [Range(4, 8)] public int influences = 4;
 
         [Header("Display")]
@@ -152,6 +156,7 @@ namespace DazVrBridge
             {
                 ["t"] = "scene.request",
                 ["textures"] = textures,
+                ["tex_max"] = texMax,
                 ["influences"] = influences,
                 ["meshes"] = true,
             });

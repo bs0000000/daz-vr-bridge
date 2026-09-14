@@ -25,6 +25,12 @@ const char kMagic[ 4 ] = { 'D', 'Z', 'T', '1' };
 // the exact byte count produceTexture will emit and the two were written apart.
 const int kHeaderBytes = 4 + 4 * 4;
 
+// Bumped whenever the conversion itself changes -- the flip, the coverage rescale,
+// the encoder. A texture's hash otherwise names only its source maps, so a fix in
+// here would leave every client happily serving stale bytes from disk out of a cache
+// that had no way to know they were wrong. Twice now.
+const int kPipelineVersion = 3;
+
 void writeU32( QByteArray &out, quint32 v )
 {
 	out.append( char( v & 0xFF ) );
@@ -382,6 +388,7 @@ TextureRef describeTexture( const QString &colorPath, const QString &opacityPath
 	digest.addData( QByteArray::number( ref.width ) );
 	digest.addData( QByteArray::number( ref.height ) );
 	digest.addData( ref.alpha ? "bc3" : "bc1" );
+	digest.addData( QByteArray::number( kPipelineVersion ) );
 	ref.hash = "sha1:" % QString::fromLatin1( digest.result().toHex() );
 	return ref;
 }
