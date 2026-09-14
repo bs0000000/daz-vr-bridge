@@ -41,6 +41,8 @@ add_library( ${DZ_PLUGIN_TGT_NAME} SHARED
 	mesh_bake.h
 	pose_apply.cpp
 	pose_apply.h
+	texture_bake.cpp
+	texture_bake.h
 	pluginmain.cpp
 	version.h
 	${OS_SOURCES}

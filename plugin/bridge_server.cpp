@@ -1,6 +1,8 @@
 #include "bridge_server.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QFileInfo>
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QNetworkInterface>
@@ -17,6 +19,7 @@
 #include "dzundostack.h"
 
 #include "scene_bake.h"
+#include "texture_bake.h"
 #include "version.h"
 
 namespace DazVrBridge {
@@ -466,8 +469,8 @@ void Server::handleAssetRequest( Connection &c, const Frame &f )
 	for ( const QJsonValue &v : hashes )
 	{
 		const QString hash = v.toString();
-		auto it = m_assets.constFind( hash );
-		if ( it == m_assets.constEnd() )
+		auto it = m_assets.find( hash );
+		if ( it == m_assets.end() )
 		{
 			QJsonObject h;
 			h[ "t" ] = "error";
@@ -478,6 +481,36 @@ void Server::handleAssetRequest( Connection &c, const Frame &f )
 			h[ "hash" ] = hash;
 			send( c.socket, h );
 			continue;
+		}
+
+		// A texture is only described until the first client wants it. Decoding a
+		// 4096-square map and compressing a mip chain is seconds of work, which is
+		// exactly why it does not happen during the bake -- and why the result is
+		// kept, so the second headset asking pays nothing.
+		if ( it->kind == "texture" && it->bytes.isEmpty() )
+		{
+			QElapsedTimer timer;
+			timer.start();
+			QString error;
+			it->bytes = produceTexture( it->texture, &error );
+			if ( it->bytes.isEmpty() )
+			{
+				QJsonObject h;
+				h[ "t" ] = "error";
+				h[ "seq" ] = m_seq++;
+				h[ "ref_seq" ] = f.seq();
+				h[ "code" ] = "asset_failed";
+				h[ "msg" ] = error.isEmpty() ? QString( "could not produce texture" ) : error;
+				h[ "hash" ] = hash;
+				send( c.socket, h );
+				log( "  texture failed: " % error );
+				continue;
+			}
+			log( QString( "  %1 -> %2x%3 %4, %5 KB in %6 ms" )
+				.arg( it->texture.label() )
+				.arg( it->texture.width ).arg( it->texture.height )
+				.arg( it->texture.alpha ? "BC3" : "BC1" )
+				.arg( it->bytes.size() / 1024 ).arg( timer.elapsed() ) );
 		}
 
 		QJsonObject h;

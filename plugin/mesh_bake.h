@@ -13,9 +13,12 @@
 #include <QByteArray>
 #include <QJsonObject>
 #include <QStringList>
+#include <QList>
 #include <QVector>
 
 #include "dzvec3.h"
+
+#include "texture_bake.h"
 
 class DzNode;
 class DzSkeleton;
@@ -29,6 +32,7 @@ struct MeshChunks
 	QByteArray	mesh;
 	QByteArray	skin;		// empty for props
 	QJsonObject	materials;
+	QList<TextureRef>	textures;	// referenced by the materials, not yet produced
 	int			vertices = 0;
 	int			triangles = 0;
 	QStringList	warnings;

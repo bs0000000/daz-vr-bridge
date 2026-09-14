@@ -40,9 +40,15 @@ namespace DazVrBridge
         }
 
         // Verifies the content hash before storing; a mismatch is a transport bug.
-        public static bool Put(string hash, byte[] bytes)
+        //
+        // `verify: false` is for assets whose hash names their SOURCE rather than their
+        // bytes -- textures, whose id is the map files they were converted from, so that
+        // the manifest can list them without decoding anything. There is nothing to check
+        // those against here; the plugin checks the produced size against what it
+        // promised, which catches the same class of mistake.
+        public static bool Put(string hash, byte[] bytes, bool verify = true)
         {
-            if (!Verify(hash, bytes))
+            if (verify && !Verify(hash, bytes))
             {
                 Debug.LogError($"[DazVrBridge] asset {hash} failed hash verification ({bytes.Length} bytes)");
                 return false;

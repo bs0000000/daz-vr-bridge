@@ -60,8 +60,30 @@ QString textureFile( const DzTexture* tex )
 	return tex ? tex->getFilename() : QString();
 }
 
-QJsonObject bakeMaterials( const DzShape* shape, const BakeOptions &opts )
+// Records every map it finds into `textures` and writes the asset hash beside the
+// path. Describing a texture is one header read, so this stays cheap enough to run
+// inside the bake; the decode and the block compression wait for a request.
+QJsonObject bakeMaterials( const DzShape* shape, const BakeOptions &opts, QList<TextureRef> &textures )
 {
+	const auto reference = [&textures, &opts]( const QString &color, const QString &opacity ) -> QJsonValue
+	{
+		const TextureRef ref = describeTexture( color, opacity, opts.texMax );
+		if ( !ref.isValid() )
+		{
+			return QJsonValue();
+		}
+		bool known = false;
+		for ( const TextureRef &t : textures )
+		{
+			if ( t.hash == ref.hash ) { known = true; break; }
+		}
+		if ( !known )
+		{
+			textures.append( ref );
+		}
+		return QJsonValue( ref.hash );
+	};
+
 	QJsonArray mats;
 	const int count = shape->getNumMaterials();
 	for ( int i = 0; i < count; ++i )
@@ -81,17 +103,15 @@ QJsonObject bakeMaterials( const DzShape* shape, const BakeOptions &opts )
 		const QColor c = mat->getDiffuseColor().getValue();
 		m[ "base_color" ] = QJsonArray{ c.redF(), c.greenF(), c.blueF() };
 
-		// Paths only; texture bytes ship in a later phase as their own assets.
-		if ( opts.textures != "none" )
-		{
-			const QString opacity = textureFile( mat->getOpacityMap() );
-			m[ "opacity_map" ] = opacity.isEmpty() ? QJsonValue() : QJsonValue( opacity );
-		}
-		if ( opts.textures == "full" )
-		{
-			const QString color = textureFile( mat->getColorMap() );
-			m[ "color_map" ] = color.isEmpty() ? QJsonValue() : QJsonValue( color );
-		}
+		// Paths stay for diagnostics; the hash is what the client asks for. Colour and
+		// opacity merge into one texture, because Daz keeps opacity in a separate
+		// greyscale file and a GPU wants it as the colour map's alpha.
+		const QString opacity = opts.textures != "none" ? textureFile( mat->getOpacityMap() ) : QString();
+		const QString color = opts.textures == "full" ? textureFile( mat->getColorMap() ) : QString();
+		if ( !opacity.isEmpty() ) m[ "opacity_map" ] = opacity;
+		if ( !color.isEmpty() ) m[ "color_map" ] = color;
+		m[ "base_tex" ] = reference( color, opacity );
+		if ( !opacity.isEmpty() ) m[ "cutout" ] = true;
 		mats.append( m );
 	}
 
@@ -482,7 +502,7 @@ bool bakeNodeMesh( DzNode* node, const DzNode* space, const QStringList &figureB
 		}
 	}
 
-	out.materials = bakeMaterials( shape, opts );
+	out.materials = bakeMaterials( shape, opts, out.textures );
 	return true;
 }
 

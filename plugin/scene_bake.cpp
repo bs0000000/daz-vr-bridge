@@ -271,7 +271,37 @@ void addAsset( BakeResult &result, QJsonObject &node, const QString &key, const 
 			return; // identical content already listed (e.g. two of the same prop)
 		}
 	}
-	result.assets.append( BakedAsset{ hash, kind, bytes } );
+	BakedAsset asset;
+	asset.hash = hash;
+	asset.kind = kind;
+	asset.bytes = bytes;
+	asset.size = bytes.size();
+	result.assets.append( asset );
+}
+
+// A texture is listed, not produced: the manifest carries its hash, dimensions and
+// exact byte count so the client can skip whatever its cache already holds and ask
+// for the rest, and only then does anything get decoded.
+void addTextureAssets( BakeResult &result, const QList<TextureRef> &textures )
+{
+	for ( const TextureRef &ref : textures )
+	{
+		bool known = false;
+		for ( const BakedAsset &a : result.assets )
+		{
+			if ( a.hash == ref.hash ) { known = true; break; }
+		}
+		if ( known )
+		{
+			continue;
+		}
+		BakedAsset asset;
+		asset.hash = ref.hash;
+		asset.kind = "texture";
+		asset.texture = ref;
+		asset.size = ref.size;
+		result.assets.append( asset );
+	}
 }
 
 // Bakes one node's mesh and attaches the asset hashes to its manifest entry.
@@ -296,6 +326,7 @@ void bakeMeshInto( DzNode* node, const DzNode* space, QJsonObject &entry, const 
 	addAsset( result, entry, "mesh", "mesh", chunks.mesh );
 	addAsset( result, entry, "skin", "skin", chunks.skin );
 	addAsset( result, entry, "materials", "materials", QJsonDocument( chunks.materials ).toJson( QJsonDocument::Compact ) );
+	addTextureAssets( result, chunks.textures );
 	entry[ "vertices" ] = chunks.vertices;
 	entry[ "triangles" ] = chunks.triangles;
 }
@@ -442,9 +473,16 @@ BakeResult bakeScene( const BakeOptions &opts )
 		QJsonObject o;
 		o[ "hash" ] = a.hash;
 		o[ "kind" ] = a.kind;
-		o[ "size" ] = a.bytes.size();
+		o[ "size" ] = double( a.size );
+		if ( a.kind == "texture" )
+		{
+			o[ "w" ] = a.texture.width;
+			o[ "h" ] = a.texture.height;
+			o[ "mips" ] = a.texture.mips;
+			o[ "format" ] = a.texture.alpha ? "bc3" : "bc1";
+		}
 		assets.append( o );
-		totalBytes += a.bytes.size();
+		totalBytes += a.size;
 	}
 
 	QJsonObject m;

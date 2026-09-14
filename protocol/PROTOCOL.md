@@ -61,7 +61,7 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `edit.state` | control | `can_undo, can_redo, undo, redo` — broadcast whenever the stack's availability or captions change, so a VR menu can label and grey its buttons | **Phase 4 ✓** |
 | `progress` | control | `op, done, total, label` | Phase 1b |
 | `scene.manifest` | control | `manifest: {…}` — see below | **Phase 1b ✓** |
-| `asset.data` | bulk | `hash, kind, size` + payload | **Phase 1b ✓** (unknown hash → `error asset_unknown` with `hash`) |
+| `asset.data` | bulk | `hash, kind, size` + payload | **Phase 1b ✓** (unknown hash → `error asset_unknown` with `hash`; a texture that cannot be produced → `asset_failed`) |
 | `pose.state` | control | `figure, bones: [ { id, ws: { pos, rot } } ], selftest?` — every bone's Daz world transform. Sent whenever any bone of that figure moves (debounced 100 ms), after a `pose.commit`, and for `selftest.begin`. | **Phase 2a ✓** |
 | `selftest.result` | control | `figure, pass, bones, max_error_deg, worst, error?` | **Phase 2a ✓** (pass = every Euler control back within 0.01°) |
 | `node.state` | control | `node, transform: { pos, rot, scale }, focal_mm?` — any prop/camera/light moved at the desk (debounced 100 ms) and the confirmation after `node.transform`/`camera.set` | **Phase 3 ✓** |
@@ -133,14 +133,34 @@ per vertex: u16[influences] bone_index, f32[influences] weight
 ```
 
 **`materials` — JSON.** `{ materials: [ { index, name, base_color:[r,g,b] 0–1,
-opacity_map: path|null, color_map: path|null } ] }`. Map entries are paths on the Daz
-machine, present only when the requested texture mode includes them; texture bytes
-are not shipped yet.
+opacity_map: path|null, color_map: path|null, base_tex: hash|null, cutout: true? } ] }`.
+The map paths are on the Daz machine and are there for diagnostics only; `base_tex` is
+the asset hash the client actually asks for. `cutout` marks a surface whose opacity map
+makes it alpha-tested.
+
+**`texture` assets — binary, `DZT1`.** `"DZT1"`, `u32 format` (1 = BC1, 3 = BC3),
+`u32 width`, `u32 height`, `u32 mips`, then every mip level largest first, back to
+back, laid out for `Texture2D.LoadRawTextureData`. Colour and opacity are **merged**:
+Daz keeps opacity in a separate greyscale file, so its luminance becomes this
+texture's alpha, and a surface with no colour map gets white RGB so its `base_color`
+still tints it.
+
+A texture asset's hash names its **sources' identity** — the map paths, their
+modification times and sizes, and the dimensions and format they would convert under —
+not the converted bytes. That is what lets the manifest list every texture, with its
+exact byte count, after reading only image headers: describing one costs a header
+read, producing one costs a full decode plus a mip chain plus block compression. The
+plugin produces the bytes when a client first asks for that hash, and keeps them.
+Because the hash is not a content hash, the client stores these without verifying
+them; the plugin checks the produced size against the size it promised instead.
+
+The manifest's `assets` entries for textures also carry `w`, `h`, `mips` and
+`format`, so a client can budget before fetching anything.
 
 ## Error codes
 
 `hello_required`, `protocol_mismatch`, `bad_role`, `bad_pairing_code`, `unknown_session`,
-`wrong_connection`, `asset_unknown`, `commit_failed`, `selftest_state`, `not_implemented`, `busy`,
+`wrong_connection`, `asset_unknown`, `asset_failed`, `commit_failed`, `selftest_state`, `not_implemented`, `busy`,
 `deferred_v2`, `unknown_type`.
 
 ## Conventions the client must honor

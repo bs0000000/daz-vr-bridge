@@ -10,6 +10,8 @@
 #include <QList>
 #include <QString>
 
+#include "texture_bake.h"
+
 namespace DazVrBridge {
 
 struct BakeOptions
@@ -24,8 +26,12 @@ struct BakeOptions
 struct BakedAsset
 {
 	QString		hash;	// "sha1:<hex>"
-	QString		kind;	// mesh | skin | materials
-	QByteArray	bytes;
+	QString		kind;	// mesh | skin | materials | texture
+	QByteArray	bytes;	// empty for a texture until something asks for it
+	// Set when kind == "texture": how to make those bytes, and how many there
+	// will be. Described at bake time, produced on request. See texture_bake.h.
+	TextureRef	texture;
+	qint64		size = 0;
 };
 
 struct BakeResult

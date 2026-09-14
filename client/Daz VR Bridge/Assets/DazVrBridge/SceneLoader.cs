@@ -22,7 +22,9 @@ namespace DazVrBridge
         public BridgeSession session;
 
         [Header("Bake options sent to the plugin")]
-        public string textures = "none";
+        [Tooltip("none = flat clay; opacity = cutout maps only (eyelashes, tears); full = colour maps too. " +
+                 "Textures arrive after the scene is already posable, compressed and mipped by the plugin.")]
+        public string textures = "full";
         [Range(4, 8)] public int influences = 4;
 
         [Header("Display")]
@@ -84,6 +86,14 @@ namespace DazVrBridge
 
         [Tooltip("Consulted before rebuilding after a desk-side node change, so a rebuild never lands mid-grab.")]
         public PoseSync poseSync;
+
+        // Textures: the bytes as they arrive, and the material slots waiting for each.
+        // The wait exists because materials are built the moment geometry lands, which is
+        // the whole point -- a texture is attached whenever it turns up after that.
+        readonly Dictionary<string, byte[]> _textureBytes = new Dictionary<string, byte[]>();
+        readonly Dictionary<string, List<Material>> _textureSlots = new Dictionary<string, List<Material>>();
+        readonly Dictionary<string, Texture2D> _builtTextures = new Dictionary<string, Texture2D>();
+        readonly List<string> _pendingTextures = new List<string>();
         bool _nodesDirty;
         bool _buildReady;
         long _requestSeq = -1;
@@ -200,18 +210,30 @@ namespace DazVrBridge
             _assets.Clear();
             _pending.Clear();
 
+            _pendingTextures.Clear();
+            _textureBytes.Clear();
             foreach (var a in manifest["assets"])
             {
                 var hash = a.Value<string>("hash");
-                if (AssetCache.TryGet(hash, out var bytes)) _assets[hash] = bytes;
+                // Textures are held back from the build: the scene should appear in clay
+                // and sharpen, not wait on a hundred megabytes of skin. Geometry is what
+                // the build actually needs.
+                var isTexture = a.Value<string>("kind") == "texture";
+                if (AssetCache.TryGet(hash, out var bytes))
+                {
+                    if (isTexture) _textureBytes[hash] = bytes;
+                    else _assets[hash] = bytes;
+                }
+                else if (isTexture) _pendingTextures.Add(hash);
                 else _pending.Add(hash);
             }
 
             var nodes = ((JArray)manifest["nodes"]).Count;
-            Status = $"manifest: {nodes} nodes, {_assets.Count} cached, {_pending.Count} to fetch";
+            Status = $"manifest: {nodes} nodes, {_assets.Count} cached, {_pending.Count} to fetch"
+                + (_pendingTextures.Count > 0 ? $", {_pendingTextures.Count} textures" : "");
             Debug.Log($"[DazVrBridge] {Status}");
 
-            if (_pending.Count == 0) _buildReady = true;
+            if (_pending.Count == 0) { _buildReady = true; RequestTextures(); }
             else RequestMissingAssets();
         }
 
@@ -228,6 +250,22 @@ namespace DazVrBridge
             Status = $"fetching {_pending.Count} assets…";
         }
 
+        // Asked for only once geometry is in hand, and answered slowly: each of these
+        // costs the plugin a full decode and a block compression, and they arrive on the
+        // bulk connection, so posing on the control connection never waits behind one.
+        void RequestTextures()
+        {
+            if (_pendingTextures.Count == 0 || !session.BulkReady) return;
+            var hashes = new JArray();
+            foreach (var h in _pendingTextures) hashes.Add(h);
+            session.SendBulk(new JObject
+            {
+                ["t"] = "asset.request",
+                ["hashes"] = hashes,
+            });
+            Debug.Log($"[DazVrBridge] requesting {_pendingTextures.Count} textures");
+        }
+
         void OnBulkFrame(BridgeFrame f)
         {
             if (f.Type == "error")
@@ -239,13 +277,25 @@ namespace DazVrBridge
             if (f.Type != "asset.data") return;
 
             var hash = f.Header.Value<string>("hash");
+
+            if (f.Header.Value<string>("kind") == "texture")
+            {
+                // A texture's hash names its source maps, not its bytes, so there is
+                // nothing here to verify it against.
+                if (!_pendingTextures.Remove(hash)) return;
+                AssetCache.Put(hash, f.Payload, verify: false);
+                _textureBytes[hash] = f.Payload;
+                ApplyTexture(hash);
+                return;
+            }
+
             if (!Busy || !_pending.Contains(hash)) return;
             if (!AssetCache.Put(hash, f.Payload)) { Busy = false; Status = "Asset verification failed; refresh to retry"; return; }
             _assets[hash] = f.Payload;
             _pending.Remove(hash);
             Status = $"fetching… {_pending.Count} left";
 
-            if (_pending.Count == 0 && _manifest != null) _buildReady = true;
+            if (_pending.Count == 0 && _manifest != null) { _buildReady = true; RequestTextures(); }
         }
 
         // ------------------------------------------------------------------
@@ -254,6 +304,8 @@ namespace DazVrBridge
         void Build()
         {
             ClearScene();
+            _textureSlots.Clear();
+            _builtTextures.Clear();
             Figures.Clear();
             Nodes.Clear();
 
@@ -679,9 +731,56 @@ namespace DazVrBridge
                 }
                 if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
                 else if (m.HasProperty("_Color")) m.SetColor("_Color", color);
+
+                if (defs != null && matIndex < defs.Count)
+                {
+                    var def = (JObject)defs[matIndex];
+                    // A surface with an opacity map is a cutout: eyelashes and tear films
+                    // are mostly hole, and rendering them opaque is what turns lashes into
+                    // black slabs. Clipping rather than blending keeps them sorting-free.
+                    if (def.Value<bool?>("cutout") == true)
+                    {
+                        m.EnableKeyword("_ALPHATEST_ON");
+                        if (m.HasProperty("_AlphaClip")) m.SetFloat("_AlphaClip", 1f);
+                        if (m.HasProperty("_Cutoff")) m.SetFloat("_Cutoff", 0.35f);
+                        m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
+                    }
+                    Want(def.Value<string>("base_tex"), m);
+                }
                 mats[i] = m;
             }
             return mats;
+        }
+
+        // Register a material's interest in a texture, and attach it now if it has
+        // already landed. Everything about the texture path is written this way round:
+        // the scene is built without waiting, and maps arrive into it afterwards.
+        void Want(string hash, Material material)
+        {
+            if (string.IsNullOrEmpty(hash)) return;
+            if (!_textureSlots.TryGetValue(hash, out var slots))
+                _textureSlots[hash] = slots = new List<Material>();
+            slots.Add(material);
+            if (_textureBytes.ContainsKey(hash)) ApplyTexture(hash);
+        }
+
+        void ApplyTexture(string hash)
+        {
+            if (!_textureSlots.TryGetValue(hash, out var slots) || slots.Count == 0) return;
+            if (!_builtTextures.TryGetValue(hash, out var texture))
+            {
+                if (!_textureBytes.TryGetValue(hash, out var bytes)) return;
+                texture = DztTexture.Build(bytes, hash);
+                if (!texture) return;
+                _builtTextures[hash] = texture;
+                _ownedResources.Add(texture);
+            }
+            foreach (var m in slots)
+            {
+                if (!m) continue;
+                if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", texture);
+                if (m.HasProperty("_MainTex")) m.SetTexture("_MainTex", texture);
+            }
         }
 
         static Shader DefaultShader()
