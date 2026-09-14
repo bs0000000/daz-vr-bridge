@@ -43,6 +43,9 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 - **Grip:** move the world with one hand; use both hands to rotate and scale it.
 - **Left B/Y held:** undo a Daz history step. **Left A/X held:** redo. Keep holding to walk back several steps.
   History is a hold rather than a tap because a face button is far too easy to brush while reaching for a bone.
+  A ring at the hand fills while the hold charges -- anticlockwise amber for undo, clockwise green for redo --
+  and flashes on each step it takes.
+- **A/X held while dragging a bone:** pass straight through props and bodies. Contact is an aid, not a law.
 - **Right B/Y held:** the settings wheel, anchored where your hand was when you pressed. Move the hand toward a
   chip to highlight it, release to apply, release in the middle to cancel. Posing and world movement pause while
   it is open.
@@ -51,8 +54,13 @@ The wheel is meant to be used without reading it: eight chips at fixed clock pos
 rather than the word ON, and continuous settings dialled by pushing the hand further out, with a haptic detent
 every 5% and the value applied live. Page one holds what you reach for mid-pose (undo, redo, prop snapping,
 figure contact, joint clamping, limit rods, scene reload); page two the things you set once (contact gap,
-clavicle share, handle reveal distance, haptic strength, forearm roll assist, limit names, life-size reset).
+clavicle share, handle reveal distance, haptic strength, forearm roll assist, contact shapes, life-size reset).
 Settings are saved locally.
+
+**Contact shapes** draws the surface hands actually stop against: a tapered elliptical tube per bone, its
+cross-section measured at six stations along the bone from the figure's own skinned vertices. Turn it on when
+contact feels wrong -- it says immediately whether the shape is off the skin or the hand is stopping early for
+some other reason.
 
 ## Backlog
 

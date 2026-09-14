@@ -372,6 +372,12 @@ namespace DazVrBridge
         {
             _onSurface = false;
             if (!SurfaceSnap && !BodyCollisions) return desired;
+            // Hold A/X on the hand that is dragging and everything becomes passable.
+            // Contact is an aid, not a law: a hand is sometimes meant to sink into flesh
+            // or into a cushion, and wrestling the solver for it is worse than switching
+            // it off for the second it takes. History is already suppressed mid-grab, so
+            // this button is free in exactly the moment it is wanted.
+            if (_hand && _hand.PrimaryHeld) return desired;
 
             var motion = desired - _lastEffector;
             var remaining = motion.magnitude;

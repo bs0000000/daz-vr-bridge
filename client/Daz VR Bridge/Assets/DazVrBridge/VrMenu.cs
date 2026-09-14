@@ -40,10 +40,10 @@ namespace DazVrBridge
         [Tooltip("Release inside this radius to cancel.")]
         public float deadZone = 3f;
         [Tooltip("Where the chips sit.")]
-        public float ringRadius = 10f;
+        public float ringRadius = 13f;
         [Tooltip("Push past this to start dragging a value; the value reaches its maximum at the outer radius.")]
-        public float valueInner = 13f;
-        public float valueOuter = 26f;
+        public float valueInner = 17f;
+        public float valueOuter = 32f;
 
         const int Slots = 8;
         const string Prefix = "DazVrBridge.Menu.";
@@ -69,8 +69,9 @@ namespace DazVrBridge
         Entry[][] _pages;
         int _page;
 
-        const float ChipWidth = 8.5f;
-        const float BarWidth = 7.7f;
+        const float ChipWidth = 11f;
+        const float ChipHeight = 4.2f;
+        const float BarWidth = 10f;
 
         // Chip visuals, one set reused across pages.
         Transform _root;
@@ -159,7 +160,9 @@ namespace DazVrBridge
             };
             setup[4] = new Entry { Label = "Back", Kind = Kind.Page, Run = () => SetPage(0) };
             setup[5] = new Entry { Label = "Roll", Kind = Kind.Toggle, Get = () => _handles && _handles.rollAssist, Set = v => _handles.rollAssist = v, Enabled = () => _handles };
-            setup[6] = new Entry { Label = "Names", Kind = Kind.Toggle, Get = () => _handles && _handles.showLimitText, Set = v => _handles.showLimitText = v, Enabled = () => _handles };
+            // Draws the invisible surface hands actually stop against. The first thing to
+            // reach for when contact feels wrong, because it turns a guess into a look.
+            setup[6] = new Entry { Label = "Shapes", Kind = Kind.Toggle, Get = () => BodyCollisionRig.ShowShapes, Set = v => BodyCollisionRig.ShowShapes = v };
             setup[7] = new Entry { Label = "Life size", Kind = Kind.Action, Run = LifeSize, Enabled = () => _rig };
 
             _pages = new[] { pose, setup };
@@ -350,7 +353,7 @@ namespace DazVrBridge
                 bar.gameObject.SetActive(fill > 0.001f);
                 // Grows from the chip's left edge rather than its centre.
                 bar.localScale = new Vector3(BarWidth * fill, 0.5f, 1f);
-                bar.localPosition = _at[i] + new Vector3(BarWidth * (fill - 1f) * 0.5f, -1.15f, -0.05f);
+                bar.localPosition = _at[i] + new Vector3(BarWidth * (fill - 1f) * 0.5f, -1.4f, -0.05f);
 
                 var caption = e == null ? "" : e.Label;
                 if (_label[i].text != caption) _label[i].text = caption;
@@ -396,16 +399,16 @@ namespace DazVrBridge
                 var at = new Vector3(Mathf.Cos(degrees * Mathf.Deg2Rad), Mathf.Sin(degrees * Mathf.Deg2Rad), 0f) * ringRadius;
 
                 _at[i] = at;
-                _chip[i] = Quad(_root, $"chip{i}", at, new Vector3(ChipWidth, 3.4f, 1f), material);
+                _chip[i] = Quad(_root, $"chip{i}", at, new Vector3(ChipWidth, ChipHeight, 1f), material);
                 // A sibling of the chip, not a child: the chip's own scale is the quad's
                 // size, so a child would inherit it and the bar's width would mean nothing.
                 _fill[i] = Quad(_root, $"fill{i}", at, new Vector3(BarWidth, 0.5f, 1f), material);
                 Tint(_fill[i], FillColor);
 
-                _label[i] = Text(_root, $"label{i}", at + new Vector3(0f, 0.35f, -0.05f), 7.6f, 2.2f);
+                _label[i] = Text(_root, $"label{i}", at + new Vector3(0f, 0.45f, -0.05f), ChipWidth - 1f, ChipHeight - 1.6f);
             }
 
-            _readout = Text(_root, "readout", new Vector3(0f, 0f, -0.05f), deadZone * 2.4f, deadZone * 1.2f);
+            _readout = Text(_root, "readout", new Vector3(0f, 0f, -0.05f), deadZone * 2.6f, deadZone * 1.4f);
             _readout.fontStyle = FontStyles.Bold;
         }
 
@@ -437,8 +440,13 @@ namespace DazVrBridge
             t.alignment = TextAlignmentOptions.Center;
             t.textWrappingMode = TextWrappingModes.NoWrap;
             t.enableAutoSizing = true;
-            t.fontSizeMin = 0.4f;
-            t.fontSizeMax = 2.4f;
+            // TextMeshPro's font size is not in the same units as the RectTransform, so a
+            // hand-picked maximum is a guess -- and the first guess here clamped every
+            // label to something unreadable. Give auto-sizing a range wide enough that it
+            // is never the binding constraint: it then simply fills the chip, whatever the
+            // unit relationship turns out to be.
+            t.fontSizeMin = 0.1f;
+            t.fontSizeMax = 300f;
             t.color = Color.white;
             // Drawn over the figure, like everything else on the wheel. fontMaterial (not
             // sharedMaterial) gives this label its own instance, so the change cannot leak

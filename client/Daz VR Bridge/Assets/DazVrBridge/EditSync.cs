@@ -56,6 +56,17 @@ namespace DazVrBridge
         float _nextHandScan;
         Face _heldFace = Face.None;
         float _nextFire;
+        float _fireInterval;
+        float _flashUntil;
+
+        const int ChargeSegments = 14;
+        static readonly Color ChargeUndo = new Color(1f, 0.70f, 0.25f, 0.95f);
+        static readonly Color ChargeRedo = new Color(0.45f, 0.95f, 0.55f, 0.95f);
+        static readonly Color ChargeDim = new Color(0.25f, 0.27f, 0.30f, 0.45f);
+        static readonly int ChargeColorId = Shader.PropertyToID("_BaseColor");
+        Transform _chargeRoot;
+        Renderer[] _charge;
+        MaterialPropertyBlock _block;
 
         void Start()
         {
@@ -68,6 +79,7 @@ namespace DazVrBridge
         void OnDestroy()
         {
             if (session) { session.ControlFrame -= OnFrame; session.ControlState -= OnState; }
+            if (_chargeRoot) Destroy(_chargeRoot.gameObject);
         }
 
         void OnState(BridgeClient.State state)
@@ -91,23 +103,34 @@ namespace DazVrBridge
             // repeats, so walking back three steps is one gesture rather than three
             // presses; letting go disarms it.
             var face = Face.None;
+            VrHand on = null;
             foreach (var h in hands)
             {
                 if (!h || h.side != bindingHand || !h.IsTracked) continue;
                 // A face button touched mid-grab is a fumble, not a command.
                 if (h.HoldingSomething || h.WorldGrab || VrHand.UiBlocked) continue;
+                on = h;
                 if (Held(h, undoButton)) face = undoButton;
                 else if (Held(h, redoButton)) face = redoButton;
                 break;
             }
 
             if (face == Face.None) _heldFace = Face.None;
-            else if (face != _heldFace) { _heldFace = face; _nextFire = Time.time + holdSeconds; }
+            else if (face != _heldFace)
+            {
+                _heldFace = face;
+                _fireInterval = holdSeconds;
+                _nextFire = Time.time + holdSeconds;
+            }
             else if (Time.time >= _nextFire)
             {
+                _fireInterval = repeatSeconds;
                 _nextFire = Time.time + repeatSeconds;
+                _flashUntil = Time.time + 0.2f;
                 if (face == undoButton) Undo(); else Redo();
             }
+
+            DrawCharge(on, face);
 
 #if ENABLE_INPUT_SYSTEM
             // Desk testing without a headset.
@@ -118,6 +141,75 @@ namespace DazVrBridge
                 else if (kb.yKey.wasPressedThisFrame) Redo();
             }
 #endif
+        }
+
+        // A ring of segments at the hand that fills while the button is held, so the hold
+        // is something you watch rather than something you have to have been told about.
+        // It fills anticlockwise in amber for undo and clockwise in green for redo -- the
+        // direction is the icon -- and flashes white on each step it takes.
+        void DrawCharge(VrHand hand, Face face)
+        {
+            if (face == Face.None || !hand)
+            {
+                if (_chargeRoot) _chargeRoot.gameObject.SetActive(false);
+                return;
+            }
+
+            if (!_chargeRoot) BuildCharge();
+            var head = Camera.main;
+            if (!head) return;
+
+            var scale = hand.transform.lossyScale.x;
+            // Just above the controller, so it is not buried inside the drawn stick.
+            var at = hand.transform.position + head.transform.up * (0.045f * scale);
+            _chargeRoot.SetPositionAndRotation(at, Quaternion.LookRotation(at - head.transform.position, head.transform.up));
+            _chargeRoot.localScale = Vector3.one * scale;
+            _chargeRoot.gameObject.SetActive(true);
+
+            var progress = _fireInterval > 1e-4f
+                ? Mathf.Clamp01(1f - (_nextFire - Time.time) / _fireInterval)
+                : 1f;
+            var flashing = Time.time < _flashUntil;
+            var undo = face == undoButton;
+            var lit = flashing ? ChargeSegments : Mathf.RoundToInt(progress * ChargeSegments);
+            var colour = flashing ? Color.white : undo ? ChargeUndo : ChargeRedo;
+
+            for (var i = 0; i < ChargeSegments; i++)
+            {
+                // Anticlockwise for undo, clockwise for redo, both starting from the top.
+                var index = undo ? i : ChargeSegments - 1 - i;
+                // Every segment stays drawn; an unlit one is just dim, so the ring reads
+                // as a dial with a filled arc rather than as pieces appearing out of nothing.
+                _block.SetColor(ChargeColorId, i < lit ? colour : ChargeDim);
+                _charge[index].SetPropertyBlock(_block);
+            }
+        }
+
+        void BuildCharge()
+        {
+            _block = new MaterialPropertyBlock();
+            var root = new GameObject("undo charge");
+            _chargeRoot = root.transform;
+            var material = BoneHandle.OverlayMaterial();
+            _charge = new Renderer[ChargeSegments];
+            for (var i = 0; i < ChargeSegments; i++)
+            {
+                var degrees = 90f - i * (360f / ChargeSegments);
+                var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                go.name = $"seg{i}";
+                Destroy(go.GetComponent<Collider>());
+                go.transform.SetParent(_chargeRoot, false);
+                go.transform.localPosition = new Vector3(
+                    Mathf.Cos(degrees * Mathf.Deg2Rad), Mathf.Sin(degrees * Mathf.Deg2Rad), 0f) * 0.032f;
+                go.transform.localRotation = Quaternion.Euler(0f, 0f, degrees);
+                go.transform.localScale = new Vector3(0.006f, 0.013f, 1f);
+                var r = go.GetComponent<Renderer>();
+                r.sharedMaterial = material;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                _charge[i] = r;
+            }
+            root.SetActive(false);
         }
 
         static bool Held(VrHand h, Face f)
