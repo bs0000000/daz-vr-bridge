@@ -115,10 +115,10 @@ namespace DazVrBridge
                 case 1: _edits.Redo(); return;
                 case 2: _loader.RequestScene(); return;
                 case 3: _handles.surfaceSnap = !_handles.surfaceSnap; break;
-                case 4: _handles.clampToLimits = !_handles.clampToLimits; break;
-                case 5: _handles.rollAssist = !_handles.rollAssist; break;
-                case 6: _handles.showLimitGizmo = !_handles.showLimitGizmo; break;
-                case 7: _handles.showLimitText = !_handles.showLimitText; break;
+                case 4: _handles.bodyCollisions = !_handles.bodyCollisions; break;
+                case 5: _handles.clampToLimits = !_handles.clampToLimits; break;
+                case 6: _handles.rollAssist = !_handles.rollAssist; break;
+                case 7: _handles.showLimitGizmo = !_handles.showLimitGizmo; break;
                 case 8: _handles.showDistance = _handles.showDistance < 0.39f ? 0.45f : _handles.showDistance < 0.59f ? 0.6f : 0.3f; break;
                 case 9: VrHand.HapticGain = VrHand.HapticGain > 0.75f ? 0f : VrHand.HapticGain < 0.25f ? 0.5f : 1f; break;
                 case 10:
@@ -147,10 +147,10 @@ namespace DazVrBridge
                 EditLabel("Redo", _edits ? _edits.RedoCaption : ""),
                 "Refresh scene",
                 Toggle("Surface snap", _handles && _handles.surfaceSnap),
+                Toggle("Figure collisions", _handles && _handles.bodyCollisions),
                 Toggle("Joint clamping", _handles && _handles.clampToLimits),
                 Toggle("Forearm roll assist", _handles && _handles.rollAssist),
                 Toggle("Limit rods", _handles && _handles.showLimitGizmo),
-                Toggle("Limit text", _handles && _handles.showLimitText),
                 "Handle reveal   " + (_handles ? Mathf.RoundToInt(_handles.showDistance * 100f) : 0) + " cm",
                 "Haptics   " + Mathf.RoundToInt(VrHand.HapticGain * 100f) + "%",
                 "Return to life size", "Close (right B)"
@@ -213,6 +213,7 @@ namespace DazVrBridge
             if (_handles)
             {
                 _handles.surfaceSnap = Read("snap", _handles.surfaceSnap);
+                _handles.bodyCollisions = Read("body", _handles.bodyCollisions);
                 _handles.clampToLimits = Read("clamp", _handles.clampToLimits);
                 _handles.rollAssist = Read("roll", _handles.rollAssist);
                 _handles.showLimitGizmo = Read("rods", _handles.showLimitGizmo);
@@ -228,6 +229,7 @@ namespace DazVrBridge
             if (_handles)
             {
                 PlayerPrefs.SetInt(Prefix + "snap", _handles.surfaceSnap ? 1 : 0);
+                PlayerPrefs.SetInt(Prefix + "body", _handles.bodyCollisions ? 1 : 0);
                 PlayerPrefs.SetInt(Prefix + "clamp", _handles.clampToLimits ? 1 : 0);
                 PlayerPrefs.SetInt(Prefix + "roll", _handles.rollAssist ? 1 : 0);
                 PlayerPrefs.SetInt(Prefix + "rods", _handles.showLimitGizmo ? 1 : 0);

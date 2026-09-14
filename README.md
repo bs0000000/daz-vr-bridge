@@ -34,7 +34,7 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 - [x] **2a · Round trip** — `pose.commit` (world rotations → `setWSRot`, one undo step), `pose.state` on desk edits, self-test passes at 0.01°.
 - [x] **2b · Grab bones in VR** — self-contained tracked hands, handles from the rig profile (mid-bone spheres, waist ring for the root), aim-based drag with twist, overlay drawing, distance fade.
 - [x] **3 · Whole scene** — props/cameras/lights grabbable and synced both ways; camera frustum + picture-in-picture at Daz's lens (vertical frame angle, render-settings aspect), oriented from Daz's own focal point and axes.
-- [x] **4 · Posing UX** — world grab/scale (rig-side), carrying the figure by its ring, two-bone IK on arms and legs with Daz joint limits enforced live, forearm-roll twist recovery, surface snapping with spatial and haptic feedback, Daz undo/redo, live node-list refresh, and an in-VR settings menu. *Mirror and figure self-collision remain deferred.*
+- [x] **4 · Posing UX** — world grab/scale (rig-side), carrying the figure by its ring, two-bone IK on arms and legs with Daz joint limits enforced live, forearm-roll twist recovery, prop and figure contact with spatial and haptic feedback, Daz undo/redo, live node-list refresh, and an in-VR settings menu. *Mirror posing remains deferred.*
 - [ ] 5 · v2 options
 
 ## VR controls
@@ -44,7 +44,7 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 - **Left B/Y:** undo the latest Daz history step. **Left A/X:** redo it.
 - **Right B/Y:** open or close the session menu. It pauses posing and world movement while open.
 
-The menu can refresh the scene, toggle surface snapping, joint clamping, forearm roll assist and limit feedback,
+The menu can refresh the scene, toggle prop snapping, figure collisions, joint clamping, forearm roll assist and limit feedback,
 change handle reveal distance and haptic strength, and restore life-size world scale. Settings are saved locally.
 
 ## Backlog
@@ -52,7 +52,5 @@ change handle reveal distance and haptic strength, and restore life-size world s
 - Revisit the controller map before treating it as final. Undo and redo currently fire on a single face-button
   press, which is too easy to trigger accidentally. Compare a hold, chord, double press, and menu-only history
   controls in the headset before choosing the replacement.
-- Add figure collision proxies so hands and feet can contact their own body and other figures without using
-  expensive animated mesh colliders.
 - Add mirror posing, opacity-cutout textures, selection mirroring, per-node resync, and a Genesis 8 profile.
 - Exercise and profile the intended two-computer LAN setup.

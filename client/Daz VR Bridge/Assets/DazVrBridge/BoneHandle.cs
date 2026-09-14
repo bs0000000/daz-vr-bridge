@@ -61,6 +61,7 @@ namespace DazVrBridge
         public bool RollAssist = true;
         public int IkIterations = 4;
         public bool SurfaceSnap = true;
+        public bool BodyCollisions = true;
         public float SnapRadius = 0.03f;
 
         // Contact proxy. Neither a sphere nor a box works: a sphere big enough for a fist
@@ -268,7 +269,7 @@ namespace DazVrBridge
         {
             _samplesLocal = null;
             _sampleReach = 0f;
-            if (!SurfaceSnap) return;
+            if (!SurfaceSnap && !BodyCollisions) return;
 
             SkinnedMeshRenderer smr = null;
             foreach (var s in Figure.Go.GetComponentsInChildren<SkinnedMeshRenderer>())
@@ -366,7 +367,7 @@ namespace DazVrBridge
         Vector3 ResolveAgainstSurfacesInner(Vector3 desired, Quaternion orientation)
         {
             _onSurface = false;
-            if (!SurfaceSnap) return desired;
+            if (!SurfaceSnap && !BodyCollisions) return desired;
 
             var motion = desired - _lastEffector;
             var remaining = motion.magnitude;
@@ -381,9 +382,14 @@ namespace DazVrBridge
             // Broadphase: one sweep of a sphere enclosing the whole hand. A hand moving
             // through open air is the common case, and it now costs one cast instead of
             // one per contact sample.
-            if (samples != null &&
-                !Physics.SphereCast(pos, _sampleReach + radius, dir, out _, remaining, ~0, QueryTriggerInteraction.Ignore))
-                return desired;
+            if (samples != null)
+            {
+                var propsMayHit = SurfaceSnap && Physics.SphereCast(pos, _sampleReach + radius, dir,
+                    out _, remaining, ~0, QueryTriggerInteraction.Ignore);
+                var bodyMayHit = BodyCollisions && BodyCollisionRig.MayHit(pos, dir, remaining,
+                    _sampleReach + radius, Figure, _ikRoot, _ikMid, BoneIndex, _ikShoulder);
+                if (!propsMayHit && !bodyMayHit) return desired;
+            }
 
             for (var i = 0; i < 3 && remaining > 1e-5f; i++)
             {
@@ -396,13 +402,24 @@ namespace DazVrBridge
                 for (var s = 0; s < count; s++)
                 {
                     var origin = samples != null ? pos + orientation * samples[s] : pos + orientation * _contactLocal;
-                    if (!Physics.SphereCast(origin, radius, dir, out var hit, remaining, ~0, QueryTriggerInteraction.Ignore)) continue;
-                    if (Vector3.Dot(dir, hit.normal) >= 0f) continue;   // leaving, not entering
-                    if (hit.distance >= hitDist) continue;
-                    hitDist = hit.distance;
-                    hitNormal = hit.normal;
-                    hitPoint = hit.point;
-                    blocked = true;
+                    if (SurfaceSnap && Physics.SphereCast(origin, radius, dir, out var hit,
+                        remaining, ~0, QueryTriggerInteraction.Ignore)
+                        && Vector3.Dot(dir, hit.normal) < 0f && hit.distance < hitDist)
+                    {
+                        hitDist = hit.distance;
+                        hitNormal = hit.normal;
+                        hitPoint = hit.point;
+                        blocked = true;
+                    }
+                    if (BodyCollisions && BodyCollisionRig.Sweep(origin, dir, hitDist, radius,
+                        Figure, _ikRoot, _ikMid, BoneIndex, _ikShoulder,
+                        out var bodyDistance, out var bodyPoint, out var bodyNormal))
+                    {
+                        hitDist = bodyDistance;
+                        hitNormal = bodyNormal;
+                        hitPoint = bodyPoint;
+                        blocked = true;
+                    }
                 }
 
                 if (!blocked)

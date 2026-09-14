@@ -37,6 +37,8 @@ namespace DazVrBridge
         [Header("Surfaces")]
         [Tooltip("Hands and feet stop at prop surfaces instead of passing through them.")]
         public bool surfaceSnap = true;
+        [Tooltip("Hands and feet stop at lightweight body proxies on this and nearby figures.")]
+        public bool bodyCollisions = true;
         [Tooltip("Half-thickness of the hand or foot, in meters. The sweep is centred on the middle of the bone, so this is how far that point stops from a surface.")]
         public float snapRadius = 0.03f;
 
@@ -272,6 +274,7 @@ namespace DazVrBridge
             foreach (var h in All)
             {
                 h.ClampToLimits = clampToLimits; h.SurfaceSnap = surfaceSnap;
+                h.BodyCollisions = bodyCollisions;
                 h.RollAssist = rollAssist; h.IkIterations = ikIterations;
             }
         }
@@ -299,6 +302,7 @@ namespace DazVrBridge
                     h.IkIterations = ikIterations;
                     h.RollAssist = rollAssist;
                     h.SurfaceSnap = surfaceSnap;
+                    h.BodyCollisions = bodyCollisions;
                     h.SnapRadius = snapRadius;
                     if (id == profile.Root) h.InitRing(fig, i, rootRingRadius, rootRingTube);
                     else h.Init(fig, i, handleRadius);

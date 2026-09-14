@@ -347,6 +347,11 @@ namespace DazVrBridge
                     go.transform.SetParent(pf.Bones[bi], true);
             }
 
+            // Analytic capsules follow the skeleton and are queried only while a hand or
+            // foot IK handle is moving. They add no animated physics or idle-frame work.
+            foreach (var figure in figures.Values)
+                figure.Go.AddComponent<BodyCollisionRig>().Init(figure);
+
             Busy = false;
             Status = $"loaded {nodes.Count} nodes, {figures.Count} figures";
             Debug.Log($"[DazVrBridge] {Status}");
