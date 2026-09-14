@@ -5,7 +5,9 @@
 #include <QVector>
 
 #include "dzbone.h"
+#include "dzfacetmesh.h"
 #include "dzfacetshape.h"
+#include "dzscene.h"
 #include "dznode.h"
 #include "dzobject.h"
 #include "dzshape.h"
@@ -138,6 +140,25 @@ bool bakeHullProxy( DzNode* node, const DzNode* space, const QStringList &figure
 		return false;
 	}
 
+	// A hull is for geometry that has no faces -- strand hair, which is curves. Anything
+	// whose cached geometry IS a facet mesh has real surfaces, and if the bake refused it
+	// the answer is to find out why, not to wrap the thing in a blob. A geometry shell
+	// lands here for exactly that reason: it has no shape of its own because it borrows
+	// its figure's, but the geometry it carries is a full facet copy of that figure, and
+	// hulling it drapes a faceted shell over the character.
+	if ( DzVertexMesh* cached = obj->getCachedGeom() )
+	{
+		if ( DzFacetMesh* faceted = qobject_cast<DzFacetMesh*>( cached ) )
+		{
+			if ( faceted->getNumFacets() > 0 )
+			{
+				out.warnings << QString( "not approximated: has %1 real facets, so this is a mesh the bake refused rather than something without surfaces" )
+					.arg( faceted->getNumFacets() );
+				return false;
+			}
+		}
+	}
+
 	// Whatever geometry exists, facets or not. Strand hair has no facet mesh to bake,
 	// but it does have vertices, and the shape of the cloud they make is the whole
 	// point here: the silhouette is what is missing from the headset, not the strands.
@@ -167,24 +188,21 @@ bool bakeHullProxy( DzNode* node, const DzNode* space, const QStringList &figure
 		return false;
 	}
 
-	// A geometry shell is a copy of its figure's mesh, offset outward. It has no shape
-	// of its own, so it lands here exactly as strand hair does -- and hulling it wraps
-	// the character in a faceted body-shaped shell with the arms merged into the torso.
-	// Nothing is gained by approximating a silhouette that is already the figure's, and
-	// a shell is nearly invisible in Daz anyway; matching vertex counts is what says so.
-	if ( space && space != node )
+	// Backstop for a shell whose geometry arrives without facets anyway: a shell is a
+	// copy of a figure's mesh, so its vertex count matches that figure's exactly. Checked
+	// against every figure in the scene rather than only this node's follow target,
+	// because a shell that is not a skeleton is classified as a prop and has no target.
+	for ( int i = 0; i < dzScene->getNumNodes(); ++i )
 	{
-		if ( DzObject* target = const_cast<DzNode*>( space )->getObject() )
+		DzNode* other = dzScene->getNode( i );
+		if ( !other || other == node || !qobject_cast<DzSkeleton*>( other ) ) continue;
+		DzObject* otherObj = other->getObject();
+		DzVertexMesh* otherMesh = otherObj ? otherObj->getCachedGeom() : nullptr;
+		if ( otherMesh && otherMesh->getNumVertices() == points.size() )
 		{
-			if ( DzVertexMesh* targetMesh = target->getCachedGeom() )
-			{
-				if ( targetMesh->getNumVertices() == points.size() )
-				{
-					out.warnings << QString( "not approximated: %1 vertices matches its figure, so this is a shell of it" )
-						.arg( points.size() );
-					return false;
-				}
-			}
+			out.warnings << QString( "not approximated: %1 vertices matches %2 exactly, so this is a shell of it" )
+				.arg( points.size() ).arg( other->getLabel() );
+			return false;
 		}
 	}
 
