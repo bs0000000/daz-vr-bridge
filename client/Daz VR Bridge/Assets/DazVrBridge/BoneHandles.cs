@@ -321,24 +321,27 @@ namespace DazVrBridge
             PairSteering();
         }
 
-        // Pair every IK effector with the handle on its own middle joint, so holding the
-        // elbow with the free hand steers the bend instead of fighting the solver for the
-        // same two rotations. A second pass because a chain's middle joint may be built
-        // either side of its effector.
+        // Pair every IK effector with the handles on the two bones above it, so holding
+        // either with the free hand steers the bend instead of fighting the solver for
+        // rotations it is already writing. Both of them, because the upper arm is what a
+        // hand actually reaches for and it is the same freedom as the elbow. A second pass
+        // because those bones may be built either side of their effector.
         void PairSteering()
         {
-            foreach (var h in All) { h.MidHandle = null; h.SteersFor = null; }
+            foreach (var h in All) { h.Steerers = null; h.SteersFor = null; }
+            var found = new List<BoneHandle>(2);
             foreach (var effector in All)
             {
-                var mid = effector.IkMidBone;
-                if (mid < 0) continue;
+                if (effector.IkMidBone < 0) continue;
+                found.Clear();
                 foreach (var candidate in All)
                 {
-                    if (candidate.Figure != effector.Figure || candidate.BoneIndex != mid) continue;
-                    effector.MidHandle = candidate;
+                    if (candidate.Figure != effector.Figure) continue;
+                    if (candidate.BoneIndex != effector.IkMidBone && candidate.BoneIndex != effector.IkRootBone) continue;
                     candidate.SteersFor = effector;
-                    break;
+                    found.Add(candidate);
                 }
+                if (found.Count > 0) effector.Steerers = found.ToArray();
             }
         }
     }

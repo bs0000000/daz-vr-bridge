@@ -41,11 +41,12 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 
 - **Trigger:** grab a bone or scene object. Inside the wheel, a tap applies a toggle or opens a page without closing.
 - **Grip:** move the world with one hand; use both hands to rotate and scale it.
-- **Both hands on one limb:** hold a hand or foot with one controller and the elbow or knee with the
-  other, and the second hand steers where the joint points instead of bending that bone itself. It is
-  the only way to change a limb's bend without fighting the solver, and it turns violet while steering.
-  A ring shows the circle the joint is confined to: the two segment lengths and the distance to the hand
-  fix it completely, so running along that ring is the only thing the second hand can do.
+- **Both hands on one limb:** hold a hand or foot with one controller and the upper arm, forearm, thigh
+  or shin with the other. The second hand steers where the joint points instead of bending that bone
+  itself, and turns violet while it does. With the wrist held and the shoulder fixed, a turn about the
+  line between them is the limb's only remaining freedom, so the elbow runs on one circle -- fixed
+  entirely by the two segment lengths and the distance to the hand. That circle is drawn while steering,
+  with a bead on it at the joint.
 - **Left B/Y held:** undo a Daz history step. **Left A/X held:** redo. Keep holding to walk back several steps.
   History is a hold rather than a tap because a face button is far too easy to brush while reaching for a bone.
   A ring at the hand fills while the hold charges -- anticlockwise amber for undo, clockwise green for redo --

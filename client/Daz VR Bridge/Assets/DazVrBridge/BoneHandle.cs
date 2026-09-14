@@ -55,11 +55,17 @@ namespace DazVrBridge
         // handle knows the effector it steers for. While both are held, the middle one
         // stops bending its own bone by FK -- which would fight the solver -- and instead
         // just says where the elbow or knee should point.
-        public BoneHandle MidHandle;    // set on effectors, by BoneHandles
-        public BoneHandle SteersFor;    // set on the middle joint of an IK chain
+        // Either bone above the effector can steer, and the upper arm is the one a hand
+        // reaches for: holding someone's upper arm and their hand is how an arm gets posed.
+        // It is the same freedom as the elbow -- with the wrist held and the shoulder
+        // fixed, the limb's only remaining motion is a turn about the line between them --
+        // just a longer lever and a better grip.
+        public BoneHandle[] Steerers;   // set on effectors, by BoneHandles
+        public BoneHandle SteersFor;    // set on the bones of an IK chain that may steer
         public bool IsSteering { get; private set; }
         // The middle joint of this handle IK chain, or -1 when it does not drive one.
         public int IkMidBone => _ik != null ? _ikMid : -1;
+        public int IkRootBone => _ik != null ? _ikRoot : -1;
         public Vector3 SteerPoint { get; private set; }
 
         // The bones this handle drives, for the joint-limit readout.
@@ -99,7 +105,24 @@ namespace DazVrBridge
         // swinging, fast enough to follow a hand.
         const float SteerSlewDegPerSecond = 300f;
         bool _steering;
-        Transform _steerRing;
+        Transform _steerRing, _steerBead;
+
+        void HideSteerCircle()
+        {
+            if (_steerRing) _steerRing.gameObject.SetActive(false);
+            if (_steerBead) _steerBead.gameObject.SetActive(false);
+        }
+
+        static void Paint(Renderer r, Color c)
+        {
+            r.sharedMaterial = OverlayMaterial();
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            var block = new MaterialPropertyBlock();
+            block.SetColor(BaseColorId, c);
+            block.SetColor(ColorId, c);
+            r.SetPropertyBlock(block);
+        }
 
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
@@ -552,7 +575,10 @@ namespace DazVrBridge
             var pole = _profile.PoleDirection(_ik, Figure.Go.transform);
             var clamping = ClampToLimits && Loader != null;
             // The other hand on the elbow or knee, if it is there.
-            Vector3? steer = MidHandle && MidHandle.IsSteering ? MidHandle.SteerPoint : (Vector3?)null;
+            Vector3? steer = null;
+            if (Steerers != null)
+                foreach (var s in Steerers)
+                    if (s && s.IsSteering) { steer = s.SteerPoint; break; }
             _steering = steer.HasValue;
 
             if (shoulder)
@@ -681,7 +707,7 @@ namespace DazVrBridge
         {
             if (!_steering)
             {
-                if (_steerRing) _steerRing.gameObject.SetActive(false);
+                HideSteerCircle();
                 return;
             }
 
@@ -693,27 +719,40 @@ namespace DazVrBridge
 
             var centre = a + axis * Vector3.Dot(joint - a, axis);
             var radius = Vector3.Distance(joint, centre);
-            if (radius < 1e-4f)
+            // A straight limb has no circle left: the joint is on the axis and there is
+            // nothing to run along. Better to show nothing than a dot pretending to be a
+            // track.
+            if (radius < 0.01f)
             {
-                if (_steerRing) _steerRing.gameObject.SetActive(false);
+                HideSteerCircle();
                 return;
             }
 
             if (!_steerRing)
             {
                 var go = new GameObject("steer circle");
-                go.AddComponent<MeshFilter>().sharedMesh = TorusMesh(1f, 0.02f);
-                var r = go.AddComponent<MeshRenderer>();
-                r.sharedMaterial = OverlayMaterial();
-                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                r.receiveShadows = false;
+                go.AddComponent<MeshFilter>().sharedMesh = TorusMesh(1f, 0.025f);
+                Paint(go.AddComponent<MeshRenderer>(), SteerColor);
                 _steerRing = go.transform;
+
+                // A ring on its own says nothing -- it reads as a hoop floating near an
+                // elbow. The bead is what makes it a track: the joint is visibly ON the
+                // wire, and moving the free hand visibly runs it around.
+                var bead = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                bead.name = "steer bead";
+                Destroy(bead.GetComponent<Collider>());
+                Paint(bead.GetComponent<MeshRenderer>(), Color.white);
+                _steerBead = bead.transform;
             }
 
             // The torus lies in its own XZ plane, so its Y has to become the limb's axis.
             _steerRing.SetPositionAndRotation(centre, Quaternion.FromToRotation(Vector3.up, axis));
             _steerRing.localScale = Vector3.one * radius;
             _steerRing.gameObject.SetActive(true);
+
+            _steerBead.position = joint;
+            _steerBead.localScale = Vector3.one * Mathf.Clamp(radius * 0.14f, 0.008f, 0.03f);
+            _steerBead.gameObject.SetActive(true);
         }
 
         // The disc lives at the scene root (it follows a surface, not the bone), so it
@@ -721,6 +760,7 @@ namespace DazVrBridge
         void OnDestroy()
         {
             if (_steerRing) Destroy(_steerRing.gameObject);
+            if (_steerBead) Destroy(_steerBead.gameObject);
             if (_contactDisc) Destroy(_contactDisc.gameObject);
         }
 
@@ -730,7 +770,7 @@ namespace DazVrBridge
             _wasPinned = false;
             IsSteering = false;
             _steering = false;
-            if (_steerRing) _steerRing.gameObject.SetActive(false);
+            HideSteerCircle();
             _hand = null;
             if (_contactDisc) _contactDisc.gameObject.SetActive(false);
             SetState(State.Idle);
