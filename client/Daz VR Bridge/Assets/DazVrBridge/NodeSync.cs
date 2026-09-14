@@ -15,6 +15,17 @@ namespace DazVrBridge
         public SceneLoader loader;
 
         readonly System.Collections.Generic.HashSet<string> _grabbed = new System.Collections.Generic.HashSet<string>();
+        // Props moved while drafting, so leaving draft can send them all at once.
+        readonly System.Collections.Generic.HashSet<string> _draftMoved = new System.Collections.Generic.HashSet<string>();
+
+        public void CommitDrafted(string label)
+        {
+            if (_draftMoved.Count == 0) return;
+            var ids = new System.Collections.Generic.List<string>(_draftMoved);
+            _draftMoved.Clear();
+            foreach (var id in ids)
+                if (loader.Nodes.TryGetValue(id, out var node)) Commit(node, label);
+        }
 
         void Start()
         {
@@ -31,6 +42,7 @@ namespace DazVrBridge
         void OnFrame(BridgeFrame f)
         {
             if (f.Type != "node.state") return;
+            if (PoseSync.Draft) return;   // the headset is the source of truth in draft
             var id = f.Header.Value<string>("node");
             if (_grabbed.Contains(id)) return;
             if (!loader.Nodes.TryGetValue(id, out var node)) return;
@@ -39,6 +51,8 @@ namespace DazVrBridge
 
         public void Commit(SceneLoader.LoadedNode node, string label)
         {
+            if (PoseSync.Draft) { _draftMoved.Add(node.Id); return; }
+
             var (pos, rot) = loader.DazWorldTransformOf(node.Go.transform);
             var isCamera = node.Type == "camera";
             var h = new JObject

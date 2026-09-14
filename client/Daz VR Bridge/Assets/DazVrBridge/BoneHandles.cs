@@ -271,6 +271,16 @@ namespace DazVrBridge
             if (loader) loader.SceneBuilt -= Rebuild;
         }
 
+        bool _wasDraft;
+
+        void LateUpdate()
+        {
+            // Repaint once when the mode flips rather than every frame.
+            if (PoseSync.Draft == _wasDraft) return;
+            _wasDraft = PoseSync.Draft;
+            foreach (var h in All) if (h) h.SetState(h.Current);
+        }
+
         public void ApplySettings()
         {
             foreach (var h in All)

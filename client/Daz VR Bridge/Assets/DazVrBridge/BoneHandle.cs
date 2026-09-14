@@ -743,6 +743,10 @@ namespace DazVrBridge
             // At a joint limit: this bone has run out of range and is why the limb stopped
             // following. (Without clamping it is also past the limit and Daz will correct it.)
             if (_overLimit > 0f) c = Color.Lerp(c, OverLimitColor, 0.35f + 0.5f * Mathf.Clamp01(_overLimit));
+            // Drafting: nothing is reaching Daz. Muting every handle is a standing reminder
+            // that does not have to be read, and forgetting which mode you are in is the one
+            // way this feature can cost real work.
+            if (PoseSync.Draft) c = Color.Lerp(c, new Color(0.5f, 0.5f, 0.52f, c.a), 0.5f);
             var a = Current == State.Idle ? _alpha : 1f;
             _renderer.enabled = a > 0.01f;
             if (!_renderer.enabled) return;

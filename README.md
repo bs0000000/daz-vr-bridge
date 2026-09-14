@@ -59,8 +59,12 @@ The wheel is meant to be used without reading it: eight chips at fixed clock pos
 rather than the word ON, and continuous settings dialled by pushing the hand further out, with a haptic detent
 every 5% and the value applied live. Page one holds what you reach for mid-pose (undo, redo, prop snapping,
 figure contact, joint clamping, limit rods, scene reload); page two the things you set once (contact gap,
-clavicle share, handle reveal distance, haptic strength, forearm roll assist, contact shapes, life-size reset).
-Settings are saved locally.
+clavicle share, handle reveal distance, haptic strength, forearm roll assist, contact shapes, life-size reset);
+page three the session, which for now is draft mode. Settings are saved locally.
+
+**Draft mode** stops anything being sent to Daz and stops anything arriving from it, so a long experiment
+neither fills Daz's undo history with intermediate poses nor gets overwritten halfway through. Leaving it
+commits the whole session as one step. Every handle is muted while it is on, and the HUD says so.
 
 **Contact shapes** draws the surface hands actually stop against: a tapered elliptical tube per bone, its
 cross-section measured at six stations along the bone from the figure's own skinned vertices. Turn it on when
@@ -70,6 +74,9 @@ some other reason.
 ## Backlog
 
 - Mirror posing, selection mirroring, per-node resync, and a Genesis 8 profile.
+- A standalone build. Everything so far has been measured in the editor, which is also the only place
+  editor-only bugs hide -- the overlay shader was one.
+- See the backlog assessment for the rest: https://claude.ai/code/artifact/8f07cacf-be1c-49c6-8ceb-126895047f1f
 - Turn on 4x MSAA: cutout materials already ask for alpha-to-coverage, which is inert until then and is
   the real fix for eyebrow fibres sparkling under head motion.
 - Exercise and profile the intended two-computer LAN setup.

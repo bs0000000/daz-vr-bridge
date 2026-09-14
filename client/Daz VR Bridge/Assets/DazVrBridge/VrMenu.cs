@@ -67,6 +67,7 @@ namespace DazVrBridge
         }
 
         Entry[][] _pages;
+        PoseSync _poses;
         int _page;
 
         const float ChipWidth = 11f;
@@ -113,6 +114,7 @@ namespace DazVrBridge
             _loader = FindAnyObjectByType<SceneLoader>();
             _edits = FindAnyObjectByType<EditSync>();
             _session = FindAnyObjectByType<BridgeSession>();
+            _poses = FindAnyObjectByType<PoseSync>();
             BuildPages();
             LoadSettings();
             BuildVisuals();
@@ -158,14 +160,26 @@ namespace DazVrBridge
                 Label = "Haptics", Kind = Kind.Value, Min = 0f, Max = 1f, Display = 100f, Unit = "%",
                 Read = () => VrHand.HapticGain, Write = v => VrHand.HapticGain = v,
             };
-            setup[4] = new Entry { Label = "Back", Kind = Kind.Page, Run = () => SetPage(0) };
+            setup[4] = new Entry { Label = "Session", Kind = Kind.Page, Run = () => SetPage(2) };
             setup[5] = new Entry { Label = "Roll", Kind = Kind.Toggle, Get = () => _handles && _handles.rollAssist, Set = v => _handles.rollAssist = v, Enabled = () => _handles };
             // Draws the invisible surface hands actually stop against. The first thing to
             // reach for when contact feels wrong, because it turns a guess into a look.
             setup[6] = new Entry { Label = "Shapes", Kind = Kind.Toggle, Get = () => BodyCollisionRig.ShowShapes, Set = v => BodyCollisionRig.ShowShapes = v };
             setup[7] = new Entry { Label = "Life size", Kind = Kind.Action, Run = LifeSize, Enabled = () => _rig };
 
-            _pages = new[] { pose, setup };
+            // A third page rather than a reshuffle: pages one and two are where the muscle
+            // memory already is, and moving a chip someone has learned costs more than an
+            // extra flick to reach a new one.
+            var session = new Entry[Slots];
+            session[0] = new Entry
+            {
+                Label = "Draft", Kind = Kind.Toggle,
+                Get = () => PoseSync.Draft,
+                Set = v => _poses?.SetDraft(v),
+                Enabled = () => _poses,
+            };
+            session[4] = new Entry { Label = "Back", Kind = Kind.Page, Run = () => SetPage(0) };
+            _pages = new[] { pose, setup, session };
         }
 
         Entry[] Page => _pages[_page];

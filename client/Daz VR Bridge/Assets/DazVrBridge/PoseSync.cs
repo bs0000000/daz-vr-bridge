@@ -46,8 +46,29 @@ namespace DazVrBridge
         // milliseconds while the other hand was still holding it.
         readonly Dictionary<string, int> _grabbed = new Dictionary<string, int>();
 
+        // Draft mode: nothing leaves for Daz and nothing arrives from it, so a long
+        // experiment neither fills Daz's undo stack with intermediate poses nor gets
+        // overwritten halfway through. Leaving it commits everything at once.
+        public static bool Draft { get; private set; }
+
+        public void SetDraft(bool on)
+        {
+            if (Draft == on) return;
+            Draft = on;
+            if (on) return;
+            // Everything at once, under one label, so a whole session of drafting is a
+            // single step in Daz's history rather than a hundred.
+            CommitAll("VR session");
+            if (!_nodes) _nodes = FindAnyObjectByType<NodeSync>();
+            if (_nodes) _nodes.CommitDrafted("VR session");
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetDraft() { Draft = false; }
+
         // True while any figure is being posed, so a scene rebuild can wait its turn.
         public bool AnyGrabbed => _grabbed.Count > 0;
+        NodeSync _nodes;
 
         public void SetGrabbed(string figureId, bool on)
         {
@@ -110,6 +131,9 @@ namespace DazVrBridge
             var id = h.Value<string>("figure");
             if (!loader.Figures.TryGetValue(id, out var fig)) return;
             if (_grabbed.ContainsKey(id)) return;
+            // In draft the headset is the source of truth; Daz's idea of the pose is stale
+            // by definition and would undo whatever is being worked on.
+            if (Draft && h.Value<bool?>("selftest") != true) return;
 
             loader.ApplyWorldPose(fig, (JArray)h["bones"]);
             Snapshot(fig);
@@ -124,13 +148,18 @@ namespace DazVrBridge
         // ---- commit
 
         [ContextMenu("Commit all figures")]
-        public void CommitAll()
+        public void CommitAll() => CommitAll("VR pose");
+
+        public void CommitAll(string label)
         {
-            foreach (var fig in loader.Figures.Values) Commit(fig);
+            foreach (var fig in loader.Figures.Values) Commit(fig, label);
         }
 
         public void Commit(SceneLoader.LoadedFigure fig, string label = "VR pose")
         {
+            // Held back until draft ends, when CommitAll sends the lot as one step.
+            if (Draft) return;
+
             var changed = new List<int>();
             if (_known.TryGetValue(fig.Id, out var known) && _knownPos.TryGetValue(fig.Id, out var knownPos))
             {

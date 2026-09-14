@@ -100,7 +100,11 @@ namespace DazVrBridge
                     var selfTest = poseSync && poseSync.LastSelfTest.Length > 0 ? "\n" + poseSync.LastSelfTest : "";
                     var hands = _lastHands.Length > 0 ? "\n<size=70%>" + _lastHands + "</size>" : "";
                     var limits = _lastLimits.Length > 0 ? "\n<color=#FF6050>" + _lastLimits + "</color>" : "";
-                    text.text = $"<b>{name}</b>\n{_sceneNodes} nodes · Daz Studio {_dazVersion}{status}{selfTest}{limits}{hands}";
+                    // A mode that quietly stops talking to Daz is worth spelling out, even
+                    // here: the muted handles say something changed, this says what.
+                    var draft = PoseSync.Draft
+                        ? "\n<color=#FF9A52><b>DRAFT</b> - nothing is being sent to Daz</color>" : "";
+                    text.text = $"<b>{name}</b>\n{_sceneNodes} nodes · Daz Studio {_dazVersion}{status}{draft}{selfTest}{limits}{hands}";
                     break;
                 case BridgeClient.State.Failed:
                     text.text = $"Failed: {session.Control.LastError}\nretrying…";
