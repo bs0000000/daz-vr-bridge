@@ -68,6 +68,7 @@ namespace DazVrBridge
 
         Entry[][] _pages;
         PoseSync _poses;
+        PoseTakes _takes;
         int _page;
 
         const float ChipWidth = 11f;
@@ -115,6 +116,7 @@ namespace DazVrBridge
             _edits = FindAnyObjectByType<EditSync>();
             _session = FindAnyObjectByType<BridgeSession>();
             _poses = FindAnyObjectByType<PoseSync>();
+            _takes = FindAnyObjectByType<PoseTakes>();
             BuildPages();
             LoadSettings();
             BuildVisuals();
@@ -178,7 +180,26 @@ namespace DazVrBridge
                 Set = v => _poses?.SetDraft(v),
                 Enabled = () => _poses,
             };
+            session[1] = new Entry
+            {
+                Label = "Take", Kind = Kind.Action,
+                Run = () => _takes?.Capture(),
+                Enabled = () => _takes && _takes.CanCapture,
+            };
             session[4] = new Entry { Label = "Back", Kind = Kind.Page, Run = () => SetPage(0) };
+            // The five slots run clockwise from the right, so which one is which is a
+            // position rather than a number to read.
+            var slots = new[] { 2, 3, 5, 6, 7 };
+            for (var i = 0; i < slots.Length && i < PoseTakes.SlotCount; i++)
+            {
+                var index = i;
+                session[slots[i]] = new Entry
+                {
+                    Label = (index + 1).ToString(), Kind = Kind.Action,
+                    Run = () => _takes?.Recall(index),
+                    Enabled = () => _takes && _takes.Filled(index),
+                };
+            }
             _pages = new[] { pose, setup, session };
         }
 

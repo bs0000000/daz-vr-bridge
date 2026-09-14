@@ -49,6 +49,7 @@ namespace DazVrBridge
             // it is subscribed before the first Pump() delivers the welcome. Drop an
             // EditSync in the scene yourself if you want to change the bindings.
             if (!FindAnyObjectByType<EditSync>()) gameObject.AddComponent<EditSync>();
+            if (!FindAnyObjectByType<PoseTakes>()) gameObject.AddComponent<PoseTakes>();
             if (!FindAnyObjectByType<VrMenu>()) gameObject.AddComponent<VrMenu>();
         }
 

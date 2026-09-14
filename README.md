@@ -60,7 +60,13 @@ rather than the word ON, and continuous settings dialled by pushing the hand fur
 every 5% and the value applied live. Page one holds what you reach for mid-pose (undo, redo, prop snapping,
 figure contact, joint clamping, limit rods, scene reload); page two the things you set once (contact gap,
 clavicle share, handle reveal distance, haptic strength, forearm roll assist, contact shapes, life-size reset);
-page three the session, which for now is draft mode. Settings are saved locally.
+page three the session: draft mode, Take, and five numbered slots to recall a take from. Settings are
+saved locally.
+
+**Takes** hold the whole scene's pose -- every figure, and the props they are resting on, since a hand on a
+chair is only a pose while the chair is where it was. Capture costs nothing: the data is what pose.commit
+already sends. They last for the session and are cleared by a scene rebuild, whose ids may no longer mean the
+same thing. Review, thumbnails and export are deliberately absent until taking and recalling has earned them.
 
 **Draft mode** stops anything being sent to Daz and stops anything arriving from it, so a long experiment
 neither fills Daz's undo history with intermediate poses nor gets overwritten halfway through. Leaving it
