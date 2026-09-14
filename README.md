@@ -39,18 +39,22 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 
 ## VR controls
 
-- **Trigger:** grab a bone or scene object. In the menu, point with the right controller and pull trigger to select.
+- **Trigger:** grab a bone or scene object. Inside the wheel, a tap applies a toggle or opens a page without closing.
 - **Grip:** move the world with one hand; use both hands to rotate and scale it.
-- **Left B/Y:** undo the latest Daz history step. **Left A/X:** redo it.
-- **Right B/Y:** open or close the session menu. It pauses posing and world movement while open.
+- **Left B/Y held:** undo a Daz history step. **Left A/X held:** redo. Keep holding to walk back several steps.
+  History is a hold rather than a tap because a face button is far too easy to brush while reaching for a bone.
+- **Right B/Y held:** the settings wheel, anchored where your hand was when you pressed. Move the hand toward a
+  chip to highlight it, release to apply, release in the middle to cancel. Posing and world movement pause while
+  it is open.
 
-The menu can refresh the scene, toggle prop snapping, figure collisions, joint clamping, forearm roll assist and limit feedback,
-change handle reveal distance and haptic strength, and restore life-size world scale. Settings are saved locally.
+The wheel is meant to be used without reading it: eight chips at fixed clock positions, state shown by colour
+rather than the word ON, and continuous settings dialled by pushing the hand further out, with a haptic detent
+every 5% and the value applied live. Page one holds what you reach for mid-pose (undo, redo, prop snapping,
+figure contact, joint clamping, limit rods, scene reload); page two the things you set once (contact gap,
+clavicle share, handle reveal distance, haptic strength, forearm roll assist, limit names, life-size reset).
+Settings are saved locally.
 
 ## Backlog
 
-- Revisit the controller map before treating it as final. Undo and redo currently fire on a single face-button
-  press, which is too easy to trigger accidentally. Compare a hold, chord, double press, and menu-only history
-  controls in the headset before choosing the replacement.
-- Add mirror posing, opacity-cutout textures, selection mirroring, per-node resync, and a Genesis 8 profile.
+- Mirror posing, opacity-cutout textures, selection mirroring, per-node resync, and a Genesis 8 profile.
 - Exercise and profile the intended two-computer LAN setup.

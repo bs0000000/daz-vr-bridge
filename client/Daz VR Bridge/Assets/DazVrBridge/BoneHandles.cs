@@ -41,6 +41,8 @@ namespace DazVrBridge
         public bool bodyCollisions = true;
         [Tooltip("Half-thickness of the hand or foot, in meters. The sweep is centred on the middle of the bone, so this is how far that point stops from a surface.")]
         public float snapRadius = 0.03f;
+        [Tooltip("How much of a reach the arm cannot make is handed to the clavicle. 0 = the clavicle never moves; the Genesis 9 profile's own value is 0.4.")]
+        [Range(0f, 1f)] public float clavicleWeight = 0.4f;
 
         [Header("Joint limits")]
         [Tooltip("Turn a handle red when a bone it drives is at or past a Daz joint limit.")]
@@ -274,8 +276,9 @@ namespace DazVrBridge
             foreach (var h in All)
             {
                 h.ClampToLimits = clampToLimits; h.SurfaceSnap = surfaceSnap;
-                h.BodyCollisions = bodyCollisions;
+                h.BodyCollisions = bodyCollisions; h.SnapRadius = snapRadius;
                 h.RollAssist = rollAssist; h.IkIterations = ikIterations;
+                h.ShoulderWeight = clavicleWeight;
             }
         }
 
@@ -304,6 +307,7 @@ namespace DazVrBridge
                     h.SurfaceSnap = surfaceSnap;
                     h.BodyCollisions = bodyCollisions;
                     h.SnapRadius = snapRadius;
+                    h.ShoulderWeight = clavicleWeight;
                     if (id == profile.Root) h.InitRing(fig, i, rootRingRadius, rootRingTube);
                     else h.Init(fig, i, handleRadius);
                     if (ikEnabled && profile.IkByEndBone.TryGetValue(id, out var chain) && h.SetIkChain(profile, chain)) ik++;

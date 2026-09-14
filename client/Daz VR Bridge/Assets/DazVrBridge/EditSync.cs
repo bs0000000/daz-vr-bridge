@@ -34,7 +34,11 @@ namespace DazVrBridge
         public Face redoButton = Face.Primary;
         [Tooltip("Which hand the buttons are read from.")]
         public VrHand.Side bindingHand = VrHand.Side.Left;
-        [Tooltip("Ignore presses closer together than this, so a bounced button does not undo twice (seconds).")]
+        [Tooltip("How long the button must be held before history fires. A tap does nothing: a face button is far too easy to brush while reaching for a bone, and an accidental undo costs real work.")]
+        public float holdSeconds = 0.4f;
+        [Tooltip("While the button stays held, fire again this often, so several steps can be walked back in one gesture.")]
+        public float repeatSeconds = 0.55f;
+        [Tooltip("Ignore requests closer together than this, so a bounced button cannot undo twice (seconds).")]
         public float repeatGuard = 0.25f;
 
         // What Daz says is on the stack right now, for a menu to label its buttons with.
@@ -50,6 +54,8 @@ namespace DazVrBridge
         public bool Pending => _pending >= 0;
         float _nextAllowed;
         float _nextHandScan;
+        Face _heldFace = Face.None;
+        float _nextFire;
 
         void Start()
         {
@@ -81,15 +87,26 @@ namespace DazVrBridge
             }
             if (hands == null) return;
 
-            if (Time.time < _nextAllowed) return;
-
+            // History is a hold, not a tap. Holding past the threshold fires once and then
+            // repeats, so walking back three steps is one gesture rather than three
+            // presses; letting go disarms it.
+            var face = Face.None;
             foreach (var h in hands)
             {
                 if (!h || h.side != bindingHand || !h.IsTracked) continue;
-                // A face button pressed mid-grab is a fumble, not a command.
-                if (h.HoldingSomething || h.WorldGrab) continue;
-                if (Pressed(h, undoButton)) { Undo(); return; }
-                if (Pressed(h, redoButton)) { Redo(); return; }
+                // A face button touched mid-grab is a fumble, not a command.
+                if (h.HoldingSomething || h.WorldGrab || VrHand.UiBlocked) continue;
+                if (Held(h, undoButton)) face = undoButton;
+                else if (Held(h, redoButton)) face = redoButton;
+                break;
+            }
+
+            if (face == Face.None) _heldFace = Face.None;
+            else if (face != _heldFace) { _heldFace = face; _nextFire = Time.time + holdSeconds; }
+            else if (Time.time >= _nextFire)
+            {
+                _nextFire = Time.time + repeatSeconds;
+                if (face == undoButton) Undo(); else Redo();
             }
 
 #if ENABLE_INPUT_SYSTEM
@@ -103,12 +120,12 @@ namespace DazVrBridge
 #endif
         }
 
-        static bool Pressed(VrHand h, Face f)
+        static bool Held(VrHand h, Face f)
         {
             switch (f)
             {
-                case Face.Primary: return h.PrimaryPressed;
-                case Face.Secondary: return h.SecondaryPressed;
+                case Face.Primary: return h.PrimaryHeld;
+                case Face.Secondary: return h.SecondaryHeld;
                 default: return false;
             }
         }

@@ -63,6 +63,10 @@ namespace DazVrBridge
         public bool SurfaceSnap = true;
         public bool BodyCollisions = true;
         public float SnapRadius = 0.03f;
+        // How much of a refused reach the clavicle absorbs. Negative means "whatever the
+        // rig profile says"; the in-VR setting overrides it without writing to the
+        // profile, which is cached and shared by every figure on that rig.
+        public float ShoulderWeight = -1f;
 
         // Contact proxy. Neither a sphere nor a box works: a sphere big enough for a fist
         // floats an open palm, and a box is a loose fit whose corner hits first whenever
@@ -600,7 +604,8 @@ namespace DazVrBridge
             var to = targetPos - sh.position;
             if (from.sqrMagnitude < 1e-8f || to.sqrMagnitude < 1e-8f) return;
 
-            var partial = Quaternion.Slerp(Quaternion.identity, Quaternion.FromToRotation(from, to), _ik.ShoulderWeight);
+            var weight = ShoulderWeight >= 0f ? ShoulderWeight : _ik.ShoulderWeight;
+            var partial = Quaternion.Slerp(Quaternion.identity, Quaternion.FromToRotation(from, to), weight);
             partial.ToAngleAxis(out var angle, out var axis);
             if (angle > 180f) { angle = 360f - angle; axis = -axis; }
             if (angle > _ik.ShoulderMaxDeg) partial = Quaternion.AngleAxis(_ik.ShoulderMaxDeg, axis);

@@ -158,6 +158,10 @@ namespace DazVrBridge
         // in Update, so the answer does not depend on script execution order.
         public bool PrimaryPressed => IsTracked && _monPrimary.WasPressedThisFrame();
         public bool SecondaryPressed => IsTracked && _monSecondary.WasPressedThisFrame();
+        // Held, not tapped. History is bound to a hold because a face button is far too
+        // easy to brush while reaching for a bone.
+        public bool PrimaryHeld => IsTracked && _monPrimary.IsPressed();
+        public bool SecondaryHeld => IsTracked && _monSecondary.IsPressed();
 
         // For the HUD: which of the four buttons this controller currently reports pressed.
         public string ButtonMonitor()
