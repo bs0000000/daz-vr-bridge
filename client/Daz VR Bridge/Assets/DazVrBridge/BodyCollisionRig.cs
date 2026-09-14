@@ -34,9 +34,13 @@ namespace DazVrBridge
         // Cross-sections measured along each bone. Six is enough to separate a waist from
         // a chest and a hip from a knee without turning the measurement noisy.
         const int Stations = 6;
-        // A high quantile rather than the extreme: one stray vertex from a fitted garment
-        // should not inflate a whole limb.
-        const float RadiusQuantile = 0.82f;
+        // Trim rather than take the outright extreme, but only just. The projections of a
+        // closed ring of vertices onto an axis are NOT spread evenly: for x = R cos(theta)
+        // they pile up near +/-R, so the 82nd percentile of a circle's width is 0.84R --
+        // which is why every shape came out visibly narrower than the body it was measured
+        // from. At 0.99 the same figure is 0.9995R, and picking the body mesh deliberately
+        // means there are no stray garment vertices left to guard against.
+        const float RadiusQuantile = 0.99f;
         const int MinPerStation = 12;
 
         sealed class Proxy
@@ -54,6 +58,7 @@ namespace DazVrBridge
             // symmetric radii hangs out behind the body and falls short in front.
             public readonly float[] Cu = new float[Stations];
             public readonly float[] Cv = new float[Stations];
+            public float ExtendLo, ExtendHi; // how far the flesh runs past each bone end
             public float RadiusAxis;        // the end caps
             public float Bound;             // largest radius anywhere, for the broadphase
             public bool Measured;
@@ -103,10 +108,16 @@ namespace DazVrBridge
         SceneLoader.LoadedFigure _figure;
         int _centerBone = -1;
         float _boundsRadius;
+        float _bodyScale = 1f;
         // Radii are measured in world units, so they have to follow the world grab's scale
         // afterwards. Bone positions already do.
         float _measuredScale = 1f;
         string _bodyMesh = "none";   // which mesh the profile came from, for the load report
+
+        /// The mesh the profile was measured from -- the figure's actual body, not whatever
+        /// happens to have the most vertices. Shared so a hand measures itself from the same
+        /// place; see BoneHandle.MeasureContactSamples.
+        public SkinnedMeshRenderer BodyMesh { get; private set; }
 
         public bool CollisionEnabled = true;
         public SceneLoader.LoadedFigure Figure => _figure;
@@ -130,6 +141,7 @@ namespace DazVrBridge
             _proxies.Clear();
 
             var scale = BodyScale();
+            _bodyScale = scale;
             _measuredScale = figure.Go.transform.lossyScale.x;
             if (!TryBone("hip", out _centerBone)) _centerBone = -1;
             _boundsRadius = 1.15f * scale;
@@ -216,6 +228,7 @@ namespace DazVrBridge
             if (_proxies.Count == 0) return 0;
 
             var smr = PickBodyMesh(out var bonesTouched, out var vertexCount);
+            BodyMesh = smr;
             _bodyMesh = smr ? $"{vertexCount} verts over {bonesTouched} bones" : "none with bone weights";
             if (!smr)
             {
@@ -315,21 +328,28 @@ namespace DazVrBridge
                 var proxy = _proxies[p];
                 if (alongs[p].Count < MinPerStation * 2) { starved.Add(BoneId(proxy.A)); continue; }
 
-                float lo = 0f, hi = lengthW[p];
-                if (proxy.B < 0)
+                // A bone is not the extent of the flesh hung on it, and that is true of
+                // every proxy, not just the ones with no second bone. The head bone runs
+                // roughly jaw to eye level while the skull carries on past both ends; the
+                // hip-to-spine1 segment is a few centimetres of bone carrying the whole
+                // pelvis. Measured against the bare segment, everything outside it collapsed
+                // into one spherical cap -- a head of discs, a balloon at the hips. Take the
+                // span from the vertices and stretch the segment onto it.
+                sorted.Clear();
+                sorted.AddRange(alongs[p]);
+                sorted.Sort();
+                var lo = sorted[Mathf.Clamp(Mathf.RoundToInt((sorted.Count - 1) * 0.01f), 0, sorted.Count - 1)];
+                var hi = sorted[Mathf.Clamp(Mathf.RoundToInt((sorted.Count - 1) * 0.99f), 0, sorted.Count - 1)];
+                if (hi - lo < 1e-4f) { lo = 0f; hi = Mathf.Max(1e-3f, lengthW[p]); }
+                if (proxy.B >= 0)
                 {
-                    // An end proxy -- head, hand, foot -- has no second bone to say where
-                    // the flesh stops, and its own segment is far shorter than that flesh:
-                    // the head bone runs roughly jaw to eye level while the skull carries
-                    // on past both ends. Measured against that stub, everything above and
-                    // below collapsed into one spherical cap, which is why a head read as
-                    // a stack of discs across the face. Take the extent from the vertices.
-                    sorted.Clear();
-                    sorted.AddRange(alongs[p]);
-                    sorted.Sort();
-                    lo = sorted[Mathf.Clamp(Mathf.RoundToInt((sorted.Count - 1) * 0.01f), 0, sorted.Count - 1)];
-                    hi = sorted[Mathf.Clamp(Mathf.RoundToInt((sorted.Count - 1) * 0.99f), 0, sorted.Count - 1)];
-                    if (hi - lo < 1e-4f) { lo = 0f; hi = Mathf.Max(1e-3f, lengthW[p]); }
+                    // Bounded, so one badly weighted vertex cannot stretch a bone across the
+                    // whole figure.
+                    var reach = Mathf.Max(lengthW[p], 0.20f * _bodyScale);
+                    lo = Mathf.Max(lo, -reach);
+                    hi = Mathf.Min(hi, lengthW[p] + reach);
+                    lo = Mathf.Min(lo, 0f);
+                    hi = Mathf.Max(hi, lengthW[p]);
                 }
                 var span = Mathf.Max(1e-4f, hi - lo);
 
@@ -380,14 +400,19 @@ namespace DazVrBridge
                 proxy.RadiusAxis = Mathf.Max(Quantile(overhang, RadiusQuantile),
                     0.35f * (ru[Stations - 1] + rv[Stations - 1]));
 
+                // Move the segment onto what was actually measured. The direction is
+                // unchanged either way, so the cross-section frame stays where it was.
                 if (proxy.B < 0)
                 {
-                    // Move the segment onto what was actually measured. The direction is
-                    // unchanged, so the cross-section frame stays where it was.
                     var dir = proxy.LocalEnd.sqrMagnitude > 1e-10f ? proxy.LocalEnd.normalized : Vector3.up;
                     var boneScale = Mathf.Max(1e-4f, _figure.Bones[proxy.A].lossyScale.x);
                     proxy.LocalStart = dir * (lo / boneScale);
                     proxy.LocalEnd = dir * (hi / boneScale);
+                }
+                else
+                {
+                    proxy.ExtendLo = Mathf.Max(0f, -lo);
+                    proxy.ExtendHi = Mathf.Max(0f, hi - lengthW[p]);
                 }
 
                 proxy.Rebound();
@@ -539,8 +564,27 @@ namespace DazVrBridge
         void Ends(Proxy proxy, out Vector3 a, out Vector3 b)
         {
             var bone = _figure.Bones[proxy.A];
-            a = bone.TransformPoint(proxy.LocalStart);
-            b = proxy.B >= 0 ? _figure.Bones[proxy.B].position : bone.TransformPoint(proxy.LocalEnd);
+            if (proxy.B < 0)
+            {
+                a = bone.TransformPoint(proxy.LocalStart);
+                b = bone.TransformPoint(proxy.LocalEnd);
+                return;
+            }
+
+            // Two bones fix the direction, but not where the flesh starts and stops: the
+            // hip-to-spine1 segment is a few centimetres of bone carrying the whole pelvis.
+            // Measured against the bare segment it became a stub with one enormous cap,
+            // which is the strange shape at the hips. Stretch it onto what was measured,
+            // along the segment, so it still follows the pose.
+            a = bone.position;
+            b = _figure.Bones[proxy.B].position;
+            var d = b - a;
+            var length = d.magnitude;
+            if (length < 1e-6f) return;
+            d /= length;
+            var k = RadiusScale;
+            a -= d * (proxy.ExtendLo * k);
+            b += d * (proxy.ExtendHi * k);
         }
 
         // The live cross-section frame: the bone's seed axis carried by the pose, made

@@ -275,9 +275,18 @@ namespace DazVrBridge
             _sampleReach = 0f;
             if (!SurfaceSnap && !BodyCollisions) return;
 
-            SkinnedMeshRenderer smr = null;
-            foreach (var s in Figure.Go.GetComponentsInChildren<SkinnedMeshRenderer>())
-                if (s.sharedMesh != null && (!smr || s.sharedMesh.vertexCount > smr.sharedMesh.vertexCount)) smr = s;
+            // The body, chosen by how much of the skeleton it touches -- the same mesh the
+            // contact shapes were measured from. Choosing the largest instead was silently
+            // landing on garments and hair, which on some figures carry no bone weights at
+            // all: nothing matched, this returned early, and the sweep fell back to a single
+            // sphere of SnapRadius. That fallback is the last few centimetres of float.
+            var rig = Figure.Go ? Figure.Go.GetComponent<BodyCollisionRig>() : null;
+            var smr = rig ? rig.BodyMesh : null;
+            if (!smr)
+            {
+                foreach (var s in Figure.Go.GetComponentsInChildren<SkinnedMeshRenderer>())
+                    if (s.sharedMesh != null && (!smr || s.sharedMesh.vertexCount > smr.sharedMesh.vertexCount)) smr = s;
+            }
             if (!smr) return;
 
             // This bone and everything hanging off it: the palm plus its fingers.
@@ -323,7 +332,12 @@ namespace DazVrBridge
             perVertex.Dispose();
             weights.Dispose();
             Destroy(baked);
-            if (found < 8) return;
+            if (found < 8)
+            {
+                Debug.LogWarning($"[DazVrBridge] {name}: only {found} vertices belong to this bone, " +
+                    $"so contact falls back to a {SnapRadius * 100f:F0} cm sphere and will float.");
+                return;
+            }
 
             // Distinct extremes only; several directions often pick the same fingertip.
             var unique = new List<Vector3>(dirs.Length);
