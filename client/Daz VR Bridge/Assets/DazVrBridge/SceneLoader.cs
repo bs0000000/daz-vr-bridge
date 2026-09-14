@@ -270,8 +270,13 @@ namespace DazVrBridge
         {
             if (f.Type == "error")
             {
-                Busy = false; _buildReady = false; Status = "Asset transfer failed; refresh to retry";
+                var failed = f.Header.Value<string>("hash");
                 Debug.LogWarning($"[DazVrBridge] bulk: {f.Header.Value<string>("code")}: {f.Header.Value<string>("msg")}");
+                // A texture that will not convert is a blemish, not a broken scene: drop
+                // it and carry on in clay for that surface. Only geometry failing is
+                // worth abandoning the build for.
+                if (failed != null && _pendingTextures.Remove(failed)) return;
+                Busy = false; _buildReady = false; Status = "Asset transfer failed; refresh to retry";
                 return;
             }
             if (f.Type != "asset.data") return;

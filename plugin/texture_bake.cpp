@@ -21,6 +21,9 @@ namespace {
 // No per-level offsets: block counts are arithmetic, and Unity wants the levels
 // contiguous in exactly this order anyway.
 const char kMagic[ 4 ] = { 'D', 'Z', 'T', '1' };
+// Four bytes of magic and four u32s. Named, because describeTexture has to predict
+// the exact byte count produceTexture will emit and the two were written apart.
+const int kHeaderBytes = 4 + 4 * 4;
 
 void writeU32( QByteArray &out, quint32 v )
 {
@@ -308,7 +311,7 @@ TextureRef describeTexture( const QString &colorPath, const QString &opacityPath
 	ref.width = powerOfTwoAtMost( source.width(), qMax( 4, texMax ) );
 	ref.height = powerOfTwoAtMost( source.height(), qMax( 4, texMax ) );
 	ref.mips = mipCount( ref.width, ref.height );
-	ref.size = 16 + chainBytes( ref.width, ref.height, ref.mips, ref.alpha );
+	ref.size = kHeaderBytes + chainBytes( ref.width, ref.height, ref.mips, ref.alpha );
 
 	// The sources' identity, not their pixels. Two surfaces sharing maps share one
 	// asset and one cache entry; editing a map in place changes its modification
@@ -397,6 +400,7 @@ QByteArray produceTexture( const TextureRef &ref, QString* errorOut )
 	writeU32( out, quint32( ref.width ) );
 	writeU32( out, quint32( ref.height ) );
 	writeU32( out, quint32( ref.mips ) );
+	Q_ASSERT( out.size() == kHeaderBytes );
 
 	QImage level = image;
 	for ( int mip = 0; mip < ref.mips; ++mip )
