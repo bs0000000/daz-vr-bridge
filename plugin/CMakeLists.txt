@@ -37,6 +37,8 @@ add_library( ${DZ_PLUGIN_TGT_NAME} SHARED
 	bridge_pane.h
 	scene_bake.cpp
 	scene_bake.h
+	hull_proxy.cpp
+	hull_proxy.h
 	mesh_bake.cpp
 	mesh_bake.h
 	pose_apply.cpp

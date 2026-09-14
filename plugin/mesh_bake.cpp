@@ -24,6 +24,7 @@
 #include "dzmaterial.h"
 #include "dznumericproperty.h"
 #include "dzmatrix3.h"
+#include "dzshape.h"
 #include "dznode.h"
 #include "dzobject.h"
 #include "dzquat.h"
@@ -385,7 +386,18 @@ DzVec3 worldToNodeLocal( const DzNode* node, const DzVec3 &world )
 bool bakeNodeMesh( DzNode* node, const DzNode* space, const QStringList &figureBones, const BakeOptions &opts, MeshChunks &out )
 {
 	DzObject* obj = node->getObject();
-	DzFacetShape* shape = obj ? qobject_cast<DzFacetShape*>( obj->getCurrentShape() ) : nullptr;
+	DzShape* anyShape = obj ? obj->getCurrentShape() : nullptr;
+
+	// Materials first, because they do not depend on there being a facet mesh. A node
+	// this function goes on to refuse may still be approximated by a hull, and that
+	// hull wants the surface's own colour -- hair that renders grey is barely better
+	// than hair that renders not at all.
+	if ( anyShape )
+	{
+		out.materials = bakeMaterials( anyShape, opts, out.textures );
+	}
+
+	DzFacetShape* shape = qobject_cast<DzFacetShape*>( anyShape );
 	DzFacetMesh* base = shape ? shape->getFacetMesh() : nullptr;
 	if ( !base )
 	{
@@ -571,7 +583,6 @@ bool bakeNodeMesh( DzNode* node, const DzNode* space, const QStringList &figureB
 		}
 	}
 
-	out.materials = bakeMaterials( shape, opts, out.textures );
 	return true;
 }
 

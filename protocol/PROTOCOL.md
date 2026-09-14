@@ -132,6 +132,13 @@ u8      influences (4 | 8), u8[3] pad
 per vertex: u16[influences] bone_index, f32[influences] weight
 ```
 
+A node whose geometry the bake cannot use — strand-based hair above all — carries
+`approximate: true` and a mesh that is a hull rather than the real thing: how far the
+node's own vertex cloud reaches in each direction from its centre, as a sphere with
+those radii. It keeps a bob a bob and a ponytail a ponytail for a few hundred
+triangles, and it keeps the surface's colour but drops its textures, whose UVs mean
+nothing on a hull. A node with nothing to approximate still reports `mesh_skipped`.
+
 **`materials` — JSON.** `{ materials: [ { index, name, base_color:[r,g,b] 0–1,
 opacity_map: path|null, color_map: path|null, base_tex: hash|null, cutout: true?,
 cutoff, normal_map: path|null, normal_tex: hash|null, normal_scale } ] }`.

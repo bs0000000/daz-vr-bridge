@@ -25,6 +25,7 @@
 #include "dzvec3.h"
 
 #include "bridge_protocol.h"
+#include "hull_proxy.h"
 #include "mesh_bake.h"
 #include "pose_apply.h"
 
@@ -310,15 +311,41 @@ void bakeMeshInto( DzNode* node, const DzNode* space, QJsonObject &entry, const 
 	const BakeOptions &opts, BakeResult &result )
 {
 	MeshChunks chunks;
-	const bool ok = bakeNodeMesh( node, space, figureBones, opts, chunks );
+	bool ok = bakeNodeMesh( node, space, figureBones, opts, chunks );
+	if ( !ok )
+	{
+		// Strand hair has no facet mesh, so it used to bake to nothing and the headset
+		// showed a bald figure -- which reads as broken rather than as simplified. Its
+		// vertices still describe a silhouette, and a silhouette is what was missing.
+		chunks.skin.clear();
+		ok = bakeHullProxy( node, space, chunks );
+		if ( ok )
+		{
+			entry[ "approximate" ] = true;
+			// A hull's UVs are spherical and mean nothing to a map drawn for strands, so
+			// it keeps the surface's colour and drops its textures rather than smearing
+			// them across a blob.
+			chunks.textures.clear();
+			QJsonArray mats = chunks.materials.value( "materials" ).toArray();
+			for ( int i = 0; i < mats.size(); ++i )
+			{
+				QJsonObject m = mats.at( i ).toObject();
+				m.remove( "base_tex" );
+				m.remove( "normal_tex" );
+				m.remove( "cutout" );
+				mats.replace( i, m );
+			}
+			chunks.materials[ "materials" ] = mats;
+		}
+	}
 	for ( const QString &w : chunks.warnings )
 	{
 		result.log << node->getLabel() % ": " % w;
 	}
 	if ( !ok )
 	{
-		// Strand hair, dForce-only items and empty shapes land here; tell the
-		// client why so it can show the node as "not baked" rather than missing.
+		// Whatever is left really has nothing to show; tell the client why so it can
+		// report the node as "not baked" rather than silently missing.
 		entry[ "mesh_skipped" ] = chunks.warnings.isEmpty() ? QString( "no geometry" ) : chunks.warnings.join( "; " );
 		return;
 	}
