@@ -46,3 +46,13 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 
 The menu can refresh the scene, toggle surface snapping, joint clamping, forearm roll assist and limit feedback,
 change handle reveal distance and haptic strength, and restore life-size world scale. Settings are saved locally.
+
+## Backlog
+
+- Revisit the controller map before treating it as final. Undo and redo currently fire on a single face-button
+  press, which is too easy to trigger accidentally. Compare a hold, chord, double press, and menu-only history
+  controls in the headset before choosing the replacement.
+- Add figure collision proxies so hands and feet can contact their own body and other figures without using
+  expensive animated mesh colliders.
+- Add mirror posing, opacity-cutout textures, selection mirroring, per-node resync, and a Genesis 8 profile.
+- Exercise and profile the intended two-computer LAN setup.
