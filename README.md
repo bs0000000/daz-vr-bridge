@@ -80,6 +80,8 @@ some other reason.
 ## Backlog
 
 - Mirror posing, selection mirroring, per-node resync, and a Genesis 8 profile.
+- A starting screen: host, pairing code and the bake options belong on the desktop window, where typing works.
+- Binding labels on the controllers, which is the tutorial without writing one.
 - A standalone build. Everything so far has been measured in the editor, which is also the only place
   editor-only bugs hide -- the overlay shader was one.
 - See the backlog assessment for the rest: https://claude.ai/code/artifact/8f07cacf-be1c-49c6-8ceb-126895047f1f

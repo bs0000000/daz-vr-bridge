@@ -32,6 +32,11 @@ namespace DazVrBridge
         [Tooltip("Approximate geometry the bake cannot use -- strand hair above all -- with a hull " +
                  "measured from its vertices. Off: such nodes simply do not appear.")]
         public bool hullProxies = true;
+        [Tooltip("Only bring in geometry within this many centimetres of the region centre; 0 brings the " +
+                 "whole scene. A thousand-prop set costs its bake, its transfer and its draw three times " +
+                 "over, and you pose one corner of it at a time. Centred on Daz's selected node unless " +
+                 "the scene says otherwise.")]
+        public float regionRadius = 0f;
         [Range(4, 8)] public int influences = 4;
 
         [Header("Display")]
@@ -162,6 +167,7 @@ namespace DazVrBridge
                 ["textures"] = textures,
                 ["tex_max"] = texMax,
                 ["hulls"] = hullProxies,
+                ["region_radius"] = regionRadius,
                 ["influences"] = influences,
                 ["meshes"] = true,
             });
@@ -239,7 +245,9 @@ namespace DazVrBridge
             }
 
             var nodes = ((JArray)manifest["nodes"]).Count;
-            Status = $"manifest: {nodes} nodes, {_assets.Count} cached, {_pending.Count} to fetch"
+            var outside = manifest["bake"]?.Value<int?>("outside_region") ?? 0;
+            var region = outside > 0 ? $", {outside} outside the region" : "";
+            Status = $"manifest: {nodes} nodes{region}, {_assets.Count} cached, {_pending.Count} to fetch"
                 + (_pendingTextures.Count > 0 ? $", {_pendingTextures.Count} textures" : "");
             Debug.Log($"[DazVrBridge] {Status}");
 

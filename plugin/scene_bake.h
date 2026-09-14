@@ -22,6 +22,12 @@ struct BakeOptions
 	bool	includeHidden = false;
 	bool	meshes = true;			// false: manifest only (skeletons, transforms)
 	bool	hulls = true;			// approximate geometry the bake cannot use (strand hair)
+	// Only bake geometry within this many centimetres of the region's centre; 0 bakes
+	// everything. A scene of a thousand props costs its bake, its transfer and its draw
+	// three times over, and a poser is working on one corner of it at a time.
+	double	regionRadius = 0.0;
+	bool	hasRegionCentre = false;
+	double	regionCentre[ 3 ] = { 0.0, 0.0, 0.0 };
 };
 
 struct BakedAsset
