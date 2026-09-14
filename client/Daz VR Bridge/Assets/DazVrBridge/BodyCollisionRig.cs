@@ -43,36 +43,47 @@ namespace DazVrBridge
         {
             public int A, B;
             public int Owner;
+            public Vector3 LocalStart;      // segment start in bone-local space (usually the origin)
             public Vector3 LocalEnd;        // segment end in bone-local space, when B < 0
             public Vector3 LocalU;          // one cross-section axis, bone-local; the other
                                             // is derived, so the pair rotates with the pose
             public readonly float[] Ru = new float[Stations];
             public readonly float[] Rv = new float[Stations];
+            // Where the cross-section actually sits relative to the bone. A spine runs down
+            // the back of a torso, not its middle, so a tube centred on the bone with
+            // symmetric radii hangs out behind the body and falls short in front.
+            public readonly float[] Cu = new float[Stations];
+            public readonly float[] Cv = new float[Stations];
             public float RadiusAxis;        // the end caps
             public float Bound;             // largest radius anywhere, for the broadphase
             public bool Measured;
 
             public void SetUniform(float r)
             {
-                for (var i = 0; i < Stations; i++) { Ru[i] = r; Rv[i] = r; }
+                for (var i = 0; i < Stations; i++) { Ru[i] = r; Rv[i] = r; Cu[i] = 0f; Cv[i] = 0f; }
                 RadiusAxis = r;
                 Bound = r;
             }
 
             public void Rebound()
             {
+                // Has to cover the offset as well as the radius, or the broadphase rejects
+                // rays that would have hit the far side of an off-centre section.
                 Bound = RadiusAxis;
-                for (var i = 0; i < Stations; i++) Bound = Mathf.Max(Bound, Mathf.Max(Ru[i], Rv[i]));
+                for (var i = 0; i < Stations; i++)
+                    Bound = Mathf.Max(Bound, Mathf.Max(Mathf.Abs(Cu[i]) + Ru[i], Mathf.Abs(Cv[i]) + Rv[i]));
             }
 
             // The cross-section a fraction t of the way along the bone.
-            public void Radii(float t, out float ru, out float rv)
+            public void Radii(float t, out float ru, out float rv, out float cu, out float cv)
             {
                 var s = Mathf.Clamp01(t) * (Stations - 1);
                 var i = Mathf.Min((int)s, Stations - 2);
                 var f = s - i;
                 ru = Mathf.Lerp(Ru[i], Ru[i + 1], f);
                 rv = Mathf.Lerp(Rv[i], Rv[i + 1], f);
+                cu = Mathf.Lerp(Cu[i], Cu[i + 1], f);
+                cv = Mathf.Lerp(Cv[i], Cv[i + 1], f);
             }
         }
 
@@ -95,6 +106,7 @@ namespace DazVrBridge
         // Radii are measured in world units, so they have to follow the world grab's scale
         // afterwards. Bone positions already do.
         float _measuredScale = 1f;
+        string _bodyMesh = "none";   // which mesh the profile came from, for the load report
 
         public bool CollisionEnabled = true;
         public SceneLoader.LoadedFigure Figure => _figure;
@@ -152,7 +164,8 @@ namespace DazVrBridge
             var measured = MeasureFromMesh();
 
             var torso = _proxies.Count > 1 ? _proxies[1] : null;
-            var report = $"[DazVrBridge] {figure.Label}: {_proxies.Count} body proxies, {measured} measured (scale {scale:F2})";
+            var report = $"[DazVrBridge] {figure.Label}: {_proxies.Count} body proxies, {measured} measured " +
+                $"from {_bodyMesh} (scale {scale:F2})";
             if (torso != null)
                 report += $"; torso width x depth along the spine: " +
                     $"{torso.Ru[0] * 200f:F0}x{torso.Rv[0] * 200f:F0} -> " +
@@ -166,14 +179,50 @@ namespace DazVrBridge
         // Every vertex is assigned to the proxy whose flesh it belongs to, binned by how
         // far along that bone it sits, and projected onto the two axes across the bone.
         // The spread in each axis, per bin, is the profile. Once per figure, at load.
+        // The body mesh, chosen by how much of the skeleton it touches. Vertex count is
+        // the wrong question: an HD garment or a hair prop can easily out-resolve the
+        // body, and a mesh whose skin asset never arrived carries no bone weights at all,
+        // so picking the biggest one silently measured nothing on three figures out of
+        // four. A body reaches the whole rig; hair reaches the head.
+        SkinnedMeshRenderer PickBodyMesh(out int bonesTouched, out int vertices)
+        {
+            SkinnedMeshRenderer best = null;
+            bonesTouched = 0;
+            vertices = 0;
+            var seen = new HashSet<int>();
+            foreach (var s in _figure.Go.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                if (s.sharedMesh == null) continue;
+                var per = s.sharedMesh.GetBonesPerVertex();
+                if (per.Length == 0) { per.Dispose(); continue; }   // no skin: nothing to learn
+                var w = s.sharedMesh.GetAllBoneWeights();
+                seen.Clear();
+                for (var i = 0; i < w.Length; i++) if (w[i].weight > 0.05f) seen.Add(w[i].boneIndex);
+                per.Dispose();
+                w.Dispose();
+                if (seen.Count <= bonesTouched) continue;
+                bonesTouched = seen.Count;
+                vertices = s.sharedMesh.vertexCount;
+                best = s;
+            }
+            return best;
+        }
+
+        // Every vertex is assigned to the proxy whose flesh it belongs to, then projected
+        // onto the two axes across that bone and binned by how far along it sits. The
+        // spread in each axis, per bin, is the profile. Once per figure, at load.
         int MeasureFromMesh()
         {
             if (_proxies.Count == 0) return 0;
 
-            SkinnedMeshRenderer smr = null;
-            foreach (var s in _figure.Go.GetComponentsInChildren<SkinnedMeshRenderer>())
-                if (s.sharedMesh != null && (!smr || s.sharedMesh.vertexCount > smr.sharedMesh.vertexCount)) smr = s;
-            if (!smr) return 0;
+            var smr = PickBodyMesh(out var bonesTouched, out var vertexCount);
+            _bodyMesh = smr ? $"{vertexCount} verts over {bonesTouched} bones" : "none with bone weights";
+            if (!smr)
+            {
+                Debug.LogWarning($"[DazVrBridge] {_figure.Label}: no skinned mesh carries bone weights, " +
+                    "so contact shapes fall back to guesses. Was the skin asset requested?");
+                return 0;
+            }
 
             // A bone belongs to the nearest proxy at or above it: spine2's flesh is part of
             // the spine1-to-spine3 tube, a finger's is part of the hand's.
@@ -201,17 +250,16 @@ namespace DazVrBridge
                 lengthW[p] = Vector3.Distance(a, b);
             }
 
-            var across = new List<float>[count, Stations];
-            var through = new List<float>[count, Stations];
-            var overhang = new List<float>[count];
+            // Kept per vertex rather than binned straight away: an end proxy cannot be
+            // binned until its own extent is known, and that comes from these.
+            var alongs = new List<float>[count];
+            var across = new List<float>[count];
+            var through = new List<float>[count];
             for (var p = 0; p < count; p++)
             {
-                overhang[p] = new List<float>(64);
-                for (var s = 0; s < Stations; s++)
-                {
-                    across[p, s] = new List<float>(128);
-                    through[p, s] = new List<float>(128);
-                }
+                alongs[p] = new List<float>(1024);
+                across[p] = new List<float>(1024);
+                through[p] = new List<float>(1024);
             }
 
             var baked = new Mesh();
@@ -224,8 +272,11 @@ namespace DazVrBridge
             var wi = 0;
             for (var v = 0; v < perVertex.Length && v < verts.Length; v++)
             {
+                // Whichever bone pulls hardest on this vertex, however weak that is. An
+                // earlier "more than half" test threw away most of a mesh skinned across
+                // eight influences.
                 var dominant = -1;
-                var best = 0.5f;
+                var best = 0f;
                 for (var k = 0; k < perVertex[v]; k++, wi++)
                 {
                     var bw = weights[wi];
@@ -233,60 +284,125 @@ namespace DazVrBridge
                 }
                 if (dominant < 0 || dominant >= proxyOf.Length) continue;
                 var p = proxyOf[dominant];
-                if (p < 0 || lengthW[p] < 1e-5f) continue;
+                if (p < 0) continue;
 
                 var rel = toWorld.MultiplyPoint3x4(verts[v]) - originW[p];
                 var along = Vector3.Dot(rel, axisW[p]);
-                if (along < 0f) { overhang[p].Add(-along); continue; }
-                if (along > lengthW[p]) { overhang[p].Add(along - lengthW[p]); continue; }
-
-                var station = Mathf.Clamp(Mathf.RoundToInt(along / lengthW[p] * (Stations - 1)), 0, Stations - 1);
                 var radial = rel - axisW[p] * along;
-                across[p, station].Add(Mathf.Abs(Vector3.Dot(radial, uW[p])));
-                through[p, station].Add(Mathf.Abs(Vector3.Dot(radial, vW[p])));
+                alongs[p].Add(along);
+                across[p].Add(Vector3.Dot(radial, uW[p]));
+                through[p].Add(Vector3.Dot(radial, vW[p]));
             }
             perVertex.Dispose();
             weights.Dispose();
             Destroy(baked);
 
             var measured = 0;
+            var starved = new List<string>();
             var ru = new float[Stations];
             var rv = new float[Stations];
+            var cu = new float[Stations];
+            var cv = new float[Stations];
             var have = new bool[Stations];
+            var binU = new List<float>[Stations];
+            var binV = new List<float>[Stations];
+            for (var s = 0; s < Stations; s++) { binU[s] = new List<float>(256); binV[s] = new List<float>(256); }
+            var overhang = new List<float>(256);
+            var sorted = new List<float>(1024);
+
             for (var p = 0; p < count; p++)
             {
+                var proxy = _proxies[p];
+                if (alongs[p].Count < MinPerStation * 2) { starved.Add(BoneId(proxy.A)); continue; }
+
+                float lo = 0f, hi = lengthW[p];
+                if (proxy.B < 0)
+                {
+                    // An end proxy -- head, hand, foot -- has no second bone to say where
+                    // the flesh stops, and its own segment is far shorter than that flesh:
+                    // the head bone runs roughly jaw to eye level while the skull carries
+                    // on past both ends. Measured against that stub, everything above and
+                    // below collapsed into one spherical cap, which is why a head read as
+                    // a stack of discs across the face. Take the extent from the vertices.
+                    sorted.Clear();
+                    sorted.AddRange(alongs[p]);
+                    sorted.Sort();
+                    lo = sorted[Mathf.Clamp(Mathf.RoundToInt((sorted.Count - 1) * 0.01f), 0, sorted.Count - 1)];
+                    hi = sorted[Mathf.Clamp(Mathf.RoundToInt((sorted.Count - 1) * 0.99f), 0, sorted.Count - 1)];
+                    if (hi - lo < 1e-4f) { lo = 0f; hi = Mathf.Max(1e-3f, lengthW[p]); }
+                }
+                var span = Mathf.Max(1e-4f, hi - lo);
+
+                for (var s = 0; s < Stations; s++) { binU[s].Clear(); binV[s].Clear(); }
+                overhang.Clear();
+                for (var i = 0; i < alongs[p].Count; i++)
+                {
+                    var t = (alongs[p][i] - lo) / span;
+                    if (t < 0f) { overhang.Add(-t * span); continue; }
+                    if (t > 1f) { overhang.Add((t - 1f) * span); continue; }
+                    var station = Mathf.Clamp(Mathf.RoundToInt(t * (Stations - 1)), 0, Stations - 1);
+                    binU[station].Add(across[p][i]);
+                    binV[station].Add(through[p][i]);
+                }
+
                 var any = false;
                 for (var s = 0; s < Stations; s++)
                 {
-                    have[s] = across[p, s].Count >= MinPerStation;
+                    have[s] = binU[s].Count >= MinPerStation;
                     if (!have[s]) continue;
-                    ru[s] = Quantile(across[p, s], RadiusQuantile);
-                    rv[s] = Quantile(through[p, s], RadiusQuantile);
+                    // Both edges of the section, so it can be centred as well as sized. The
+                    // quantiles are trimmed rather than taken at the extremes, which keeps
+                    // a stray vertex from dragging one side outwards.
+                    Extent(binU[s], out cu[s], out ru[s]);
+                    Extent(binV[s], out cv[s], out rv[s]);
                     any |= ru[s] > 1e-4f && rv[s] > 1e-4f;
                 }
-                if (!any) continue;
+                if (!any) { starved.Add(BoneId(proxy.A)); continue; }
 
                 // A station the mesh was too thin to fill borrows its nearest filled
                 // neighbour, so a gap never collapses the tube to nothing.
                 FillGaps(ru, have);
                 FillGaps(rv, have);
+                FillGaps(cu, have);
+                FillGaps(cv, have);
                 // One smoothing pass: the quantile is noisy bin to bin, and a body is not.
                 Smooth(ru);
                 Smooth(rv);
+                Smooth(cu);
+                Smooth(cv);
 
-                var proxy = _proxies[p];
-                for (var s = 0; s < Stations; s++) { proxy.Ru[s] = ru[s]; proxy.Rv[s] = rv[s]; }
-                // The caps: how far flesh reaches past the joint, which is the whole point
-                // for the skull and the heel. Never smaller than the cross-section there,
-                // or the tube would end in a disc.
-                proxy.RadiusAxis = Mathf.Max(Quantile(overhang[p], RadiusQuantile),
+                for (var s = 0; s < Stations; s++)
+                {
+                    proxy.Ru[s] = ru[s]; proxy.Rv[s] = rv[s];
+                    proxy.Cu[s] = cu[s]; proxy.Cv[s] = cv[s];
+                }
+                // The caps round off the ends rather than leaving a flat disc.
+                proxy.RadiusAxis = Mathf.Max(Quantile(overhang, RadiusQuantile),
                     0.35f * (ru[Stations - 1] + rv[Stations - 1]));
+
+                if (proxy.B < 0)
+                {
+                    // Move the segment onto what was actually measured. The direction is
+                    // unchanged, so the cross-section frame stays where it was.
+                    var dir = proxy.LocalEnd.sqrMagnitude > 1e-10f ? proxy.LocalEnd.normalized : Vector3.up;
+                    var boneScale = Mathf.Max(1e-4f, _figure.Bones[proxy.A].lossyScale.x);
+                    proxy.LocalStart = dir * (lo / boneScale);
+                    proxy.LocalEnd = dir * (hi / boneScale);
+                }
+
                 proxy.Rebound();
                 proxy.Measured = true;
                 measured++;
             }
+
+            if (starved.Count > 0)
+                Debug.LogWarning($"[DazVrBridge] {_figure.Label}: {starved.Count} contact proxies had too few " +
+                    $"vertices and kept their guessed size ({string.Join(", ", starved)}).");
             return measured;
         }
+
+        string BoneId(int bone) => _figure.BoneJson[bone].Value<string>("id");
+
 
         static void FillGaps(float[] values, bool[] have)
         {
@@ -314,6 +430,17 @@ namespace DazVrBridge
                 var c = copy[Mathf.Min(Stations - 1, i + 1)];
                 values[i] = (a + 2f * b + c) * 0.25f;
             }
+        }
+
+        // The trimmed span of a set of signed offsets, as a centre and a half-width.
+        static void Extent(List<float> values, out float center, out float radius)
+        {
+            values.Sort();
+            var last = values.Count - 1;
+            var lo = values[Mathf.Clamp(Mathf.RoundToInt(last * (1f - RadiusQuantile)), 0, last)];
+            var hi = values[Mathf.Clamp(Mathf.RoundToInt(last * RadiusQuantile), 0, last)];
+            center = (lo + hi) * 0.5f;
+            radius = Mathf.Max(1e-4f, (hi - lo) * 0.5f);
         }
 
         static float Quantile(List<float> values, float q)
@@ -360,7 +487,7 @@ namespace DazVrBridge
         void Add(string a, string b, float radius)
         {
             if (!TryBone(a, out var ai) || !TryBone(b, out var bi)) return;
-            var proxy = new Proxy { A = ai, B = bi, Owner = ai, LocalU = SeedAxis(SegmentLocal(ai, bi)) };
+            var proxy = new Proxy { A = ai, B = bi, Owner = ai, LocalU = SeedAxis(ai, SegmentLocal(ai, bi)) };
             proxy.SetUniform(radius);
             _proxies.Add(proxy);
         }
@@ -369,20 +496,31 @@ namespace DazVrBridge
         {
             if (!TryBone(bone, out var i)) return;
             var end = RestEndLocal(i);
-            var proxy = new Proxy { A = i, B = -1, Owner = i, LocalEnd = end, LocalU = SeedAxis(end) };
+            var proxy = new Proxy { A = i, B = -1, Owner = i, LocalEnd = end, LocalU = SeedAxis(i, end) };
             proxy.SetUniform(radius);
             _proxies.Add(proxy);
         }
 
-        // Some direction across the bone. Which one does not matter -- both radii are
-        // measured along whatever pair this produces -- but it has to be stable and not
-        // nearly parallel to the bone, or the frame flips as the figure moves.
-        static Vector3 SeedAxis(Vector3 segmentLocal)
+        static readonly Vector3[] SeedPreference = { Vector3.right, Vector3.forward, Vector3.up };
+
+        // The cross-section axes have to be the body's own -- width across, depth front to
+        // back -- not just any pair perpendicular to the bone. The measurement records the
+        // extent along each axis and then treats the pair as an ellipse, and an extent is
+        // a bounding box: measured on a frame skewed to the body, a torso comes out as a
+        // box rotated off its own axes, which bulges out past the skin on the diagonal.
+        Vector3 SeedAxis(int bone, Vector3 segmentLocal)
         {
             var n = segmentLocal.sqrMagnitude > 1e-10f ? segmentLocal.normalized : Vector3.up;
-            var seed = Mathf.Abs(n.x) < 0.9f ? Vector3.right : Vector3.up;
-            var u = Vector3.ProjectOnPlane(seed, n);
-            return u.sqrMagnitude > 1e-8f ? u.normalized : Vector3.forward;
+            var toLocal = Quaternion.Inverse(_figure.OrientUnity[bone]);
+            // Figure right, then forward, then up: the first that is not nearly along the
+            // bone, so the projection is never degenerate.
+            foreach (var axis in SeedPreference)
+            {
+                var candidate = Vector3.ProjectOnPlane(toLocal * axis, n);
+                if (candidate.sqrMagnitude > 0.25f) return candidate.normalized;
+            }
+            var fallback = Vector3.ProjectOnPlane(Vector3.right, n);
+            return fallback.sqrMagnitude > 1e-8f ? fallback.normalized : Vector3.forward;
         }
 
         Vector3 SegmentLocal(int a, int b)
@@ -401,7 +539,7 @@ namespace DazVrBridge
         void Ends(Proxy proxy, out Vector3 a, out Vector3 b)
         {
             var bone = _figure.Bones[proxy.A];
-            a = bone.position;
+            a = bone.TransformPoint(proxy.LocalStart);
             b = proxy.B >= 0 ? _figure.Bones[proxy.B].position : bone.TransformPoint(proxy.LocalEnd);
         }
 
@@ -510,13 +648,13 @@ namespace DazVrBridge
             var rel = p - s.A;
             var along = Vector3.Dot(rel, s.W);
             var t = s.Length > 1e-6f ? Mathf.Clamp01(along / s.Length) : 0f;
-            s.P.Radii(t, out var ru, out var rv);
+            s.P.Radii(t, out var ru, out var rv, out var cu, out var cv);
             ru = Mathf.Max(1e-5f, ru * s.K + s.Extra);
             rv = Mathf.Max(1e-5f, rv * s.K + s.Extra);
             var raxis = Mathf.Max(1e-5f, s.P.RadiusAxis * s.K + s.Extra);
 
-            var du = Vector3.Dot(rel, s.U) / ru;
-            var dv = Vector3.Dot(rel, s.V) / rv;
+            var du = (Vector3.Dot(rel, s.U) - cu * s.K) / ru;
+            var dv = (Vector3.Dot(rel, s.V) - cv * s.K) / rv;
             var dw = along < 0f ? along : along > s.Length ? along - s.Length : 0f;
             dw /= raxis;
             return du * du + dv * dv + dw * dw - 1f;
@@ -613,9 +751,9 @@ namespace DazVrBridge
                 for (var station = 0; station < Stations; station++)
                 {
                     var t = station / (float)(Stations - 1);
-                    proxy.Radii(t, out var ru, out var rv);
+                    proxy.Radii(t, out var ru, out var rv, out var cu, out var cv);
                     ru *= k; rv *= k;
-                    var center = s.A + s.W * (t * s.Length);
+                    var center = s.A + s.W * (t * s.Length) + s.U * (cu * k) + s.V * (cv * k);
                     var first = _wireVerts.Count;
                     for (var i = 0; i < RingSegments; i++)
                     {
