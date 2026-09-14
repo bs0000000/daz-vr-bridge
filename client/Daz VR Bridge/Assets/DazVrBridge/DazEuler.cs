@@ -169,10 +169,17 @@ namespace DazVrBridge
         //   along the bone            -> twist
         //   about the body's L/R axis -> bend   (flexion)
         //   otherwise                 -> side   (abduction)
+        // World direction of one of a bone's Daz rotation axes. Daz +Z mirrors to Unity -Z.
+        public static Vector3 AxisWorld(SceneLoader.LoadedFigure fig, int boneIndex, int axis)
+        {
+            var local = axis == 0 ? Vector3.right : axis == 1 ? Vector3.up : -Vector3.forward;
+            return fig.Bones[boneIndex].rotation * local;
+        }
+
         public static string AxisKind(SceneLoader.LoadedFigure fig, int boneIndex, int axis, Vector3 figureForward)
         {
             var bone = fig.Bones[boneIndex];
-            var axisWorld = bone.rotation * (axis == 0 ? Vector3.right : axis == 1 ? Vector3.up : -Vector3.forward);
+            var axisWorld = AxisWorld(fig, boneIndex, axis);
 
             var b = fig.BoneJson[boneIndex];
             var segFigure = DazSpace.Pos(b["end"]) - DazSpace.Pos(b["origin"]);

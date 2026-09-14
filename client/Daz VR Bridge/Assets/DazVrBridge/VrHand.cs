@@ -129,6 +129,15 @@ namespace DazVrBridge
             foreach (var a in AllActions()) a.Disable();
         }
 
+        // A short buzz. Feedback you don't have to read: a tick when a hand touches down
+        // on a surface, a firmer one when a joint runs out of range.
+        public void Pulse(float amplitude, float duration)
+        {
+            var device = _position.activeControl?.device;
+            if (device is UnityEngine.InputSystem.XR.XRControllerWithRumble rumble)
+                rumble.SendImpulse(Mathf.Clamp01(amplitude), duration);
+        }
+
         // For the HUD: which of the four buttons this controller currently reports pressed.
         public string ButtonMonitor()
         {

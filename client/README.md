@@ -89,22 +89,29 @@ hard on commit.
   what Daz will keep. Turn it off for the old free solve.
 - **Show Limits** (default on) turns the handle **you are holding** red when a bone it
   drives is *at* its limit — which, with clamping on, is what "the hand stopped following
-  my controller" actually means — and names it on the HUD by the motion it ran out of
-  rather than by axis letter: `l_upperarm twist 90° at [-40, 90]`. Handles you are *not*
-  holding only redden when genuinely past a limit, and axes Daz locks shut (`l_forearm
-  z[0,0]`) are ignored — otherwise every forearm and shin reads as permanently pinned.
+  my controller" actually means. Handles you are *not* holding only redden when genuinely
+  past a limit, and axes Daz locks shut (`l_forearm z[0,0]`) are ignored — otherwise every
+  forearm and shin reads as permanently pinned.
+- **Show Limit Gizmo** (default on) draws a red rod through the pinned bone along the
+  rotation that ran out: **along** the bone means twist, **across** it means bend. Which
+  joint and which motion, at a glance, without reading.
+- **Show Limit Text** (default **off**) also spells it out on the HUD,
+  `l_upperarm twist 90° at [-40, 90]`. Reading while posing is a nuisance, so it's opt-in.
 
-**Surfaces** (`BoneHandles` → Surface Snap, Snap Radius; `SceneLoader` → Prop Mesh
-Colliders). Hands and feet do not pass through props. The sweep is centred on the *middle
-of the hand or foot* — where the handle sits — not on the wrist or ankle, so the palm
-lands on the surface instead of the whole hand hovering a radius above it. Snap Radius is
-that bone's half-thickness, 3 cm by default. The contact point sweeps from where it was
-to where your controller wants it, stops at the first surface and slides along it; lifting
-frees it at once.
+**Surfaces** (`BoneHandles` → Surface Snap; `SceneLoader` → Prop Mesh Colliders). Hands
+and feet do not pass through props. At each grab the hand or foot is **measured as it
+currently is** — the bounds of the skinned vertices belonging to that bone and its fingers
+— and that oriented box is what sweeps against surfaces. A sphere was the obvious proxy
+and the wrong one: big enough not to sink a fist means an open palm floats, because a flat
+hand is a thin slab. Snap Radius is only the fallback for a node with no mesh.
 
-A **cyan disc** appears on the surface at the contact point while touching. Resting on
-something and running out of joint range feel identical through a controller, so they are
-shown differently: disc on the surface = touching, red handle = a joint at its limit.
+The box sweeps from where it was to where your controller wants it, stops at the first
+surface and slides along it; lifting frees it at once.
+
+Touching down is reported three ways, none of which is text: a **cyan disc** lies on the
+surface at the contact point, the controller gives a **short tick**, and a joint running
+out of range gives a **firmer buzz** plus a red handle. Resting on something and running
+out of range feel identical through a controller otherwise.
 
 Props get a real mesh collider at load for this (non-trigger, so it never collides with
 the grab handles). Her own body has no colliders yet, so a hand can still pass through her.

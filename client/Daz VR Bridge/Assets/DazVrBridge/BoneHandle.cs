@@ -61,16 +61,20 @@ namespace DazVrBridge
         public bool SurfaceSnap = true;
         public float SnapRadius = 0.03f;
 
-        // Contact is swept at the MIDDLE of the hand or foot, not at the wrist or ankle:
-        // the joint is not the part that touches a table, and sweeping there left the
-        // whole hand hovering a full radius above the surface. The handle already sits at
-        // the middle of the bone, so its own local offset is the contact point.
-        Vector3 _contactLocal;
+        // Contact proxy. A sphere is a decent fist and a poor flat hand — a hand is a thin
+        // slab, so a sphere big enough not to sink a fist holds an open palm well off the
+        // surface. At grab time the actual skinned hand is measured and the sweep uses
+        // that oriented box instead, falling back to a sphere only if there is no mesh.
+        Vector3 _contactLocal;      // box centre (or the handle offset) in bone space
+        Vector3 _boxHalfLocal;
+        bool _hasBox;
         Vector3 _lastContact;
         bool _onSurface;
         Vector3 _contactPoint, _contactNormal;
         public bool OnSurface => _onSurface;
         Transform _contactDisc;
+        VrHand _hand;
+        bool _wasPinned;
 
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
@@ -200,8 +204,10 @@ namespace DazVrBridge
             _offsetRot = Quaternion.Inverse(hand.rotation) * Bone.rotation;
             _bendHint = Vector3.zero; // the solver seeds it from the limb's current bend
             if (_ikShoulder >= 0) _shoulderRot0 = Figure.Bones[_ikShoulder].rotation;
+            if (_ik != null) MeasureContactBox();
             _lastContact = Bone.position + Bone.rotation * _contactLocal;
             _onSurface = false;
+            _hand = hand ? hand.GetComponent<VrHand>() : null;
             SetState(State.Grabbed);
             if (!_poseSync) _poseSync = FindAnyObjectByType<PoseSync>();
             _poseSync?.SetGrabbed(Figure.Id, true);
@@ -225,9 +231,11 @@ namespace DazVrBridge
                 var desiredEffector = hand.position + hand.rotation * _offsetPos;
 
                 // Resolve where the palm/sole may go, then put the joint back under it.
-                _lastContact = ResolveAgainstSurfaces(desiredEffector + targetRot * _contactLocal);
+                var wasOnSurface = _onSurface;
+                _lastContact = ResolveAgainstSurfaces(desiredEffector + targetRot * _contactLocal, targetRot);
                 SolveIk(_lastContact - targetRot * _contactLocal, targetRot);
                 ShowContact();
+                if (_onSurface && !wasOnSurface) _hand?.Pulse(0.35f, 0.03f); // a tick on touching down
                 return;
             }
 
@@ -249,10 +257,66 @@ namespace DazVrBridge
         // sweep a sphere, stop at the first surface, project what is left onto that
         // surface and sweep again. So a hand pushed into a couch arm settles on it and
         // then slides along it, and lifting the controller frees it immediately.
-        Vector3 ResolveAgainstSurfaces(Vector3 desired)
+        // Measures the hand or foot as it currently is — fingers curled or flat — by
+        // taking the bounds of the skinned vertices that belong to this bone and its
+        // descendants, in the bone's own frame. Once per grab, not per frame.
+        void MeasureContactBox()
+        {
+            _hasBox = false;
+            if (!SurfaceSnap) return;
+
+            SkinnedMeshRenderer smr = null;
+            foreach (var s in Figure.Go.GetComponentsInChildren<SkinnedMeshRenderer>())
+                if (s.sharedMesh != null && (!smr || s.sharedMesh.vertexCount > smr.sharedMesh.vertexCount)) smr = s;
+            if (!smr) return;
+
+            // This bone and everything hanging off it: the palm plus its fingers.
+            var mine = new bool[Figure.Bones.Length];
+            for (var b = 0; b < mine.Length; b++)
+                for (var p = b; p >= 0; p = Figure.ParentBone[p])
+                    if (p == BoneIndex) { mine[b] = true; break; }
+
+            var baked = new Mesh();
+            smr.BakeMesh(baked, true);
+            var verts = baked.vertices;
+            var perVertex = smr.sharedMesh.GetBonesPerVertex();
+            var weights = smr.sharedMesh.GetAllBoneWeights();
+
+            var toLocal = Bone.worldToLocalMatrix * smr.transform.localToWorldMatrix;
+            var min = Vector3.positiveInfinity;
+            var max = Vector3.negativeInfinity;
+            var found = 0;
+            var wi = 0;
+            for (var v = 0; v < perVertex.Length && v < verts.Length; v++)
+            {
+                var take = false;
+                for (var k = 0; k < perVertex[v]; k++, wi++)
+                {
+                    var bw = weights[wi];
+                    if (bw.weight >= 0.5f && bw.boneIndex < mine.Length && mine[bw.boneIndex]) take = true;
+                }
+                if (!take) continue;
+                var p = toLocal.MultiplyPoint3x4(verts[v]);
+                min = Vector3.Min(min, p);
+                max = Vector3.Max(max, p);
+                found++;
+            }
+            perVertex.Dispose();
+            weights.Dispose();
+            Destroy(baked);
+
+            if (found < 8) return;
+            var half = (max - min) * 0.5f;
+            if (half.x > 0.3f || half.y > 0.3f || half.z > 0.3f) return; // implausible; keep the sphere
+            _contactLocal = (min + max) * 0.5f;
+            _boxHalfLocal = Vector3.Max(half, Vector3.one * 0.004f);
+            _hasBox = true;
+        }
+
+        Vector3 ResolveAgainstSurfaces(Vector3 desired, Quaternion orientation)
         {
             _onSurface = false;
-            if (!SurfaceSnap || SnapRadius <= 0f) return desired;
+            if (!SurfaceSnap || (!_hasBox && SnapRadius <= 0f)) return desired;
 
             var motion = desired - _lastContact;
             var remaining = motion.magnitude;
@@ -260,8 +324,10 @@ namespace DazVrBridge
 
             // Already intersecting something (a prop moved onto the hand, or the pose
             // started inside one): do not fight it, or the hand would never get out.
-            if (Physics.CheckSphere(_lastContact, SnapRadius, ~0, QueryTriggerInteraction.Ignore))
-                return desired;
+            var stuck = _hasBox
+                ? Physics.CheckBox(_lastContact, _boxHalfLocal, orientation, ~0, QueryTriggerInteraction.Ignore)
+                : Physics.CheckSphere(_lastContact, SnapRadius, ~0, QueryTriggerInteraction.Ignore);
+            if (stuck) return desired;
 
             var dir = motion / remaining;
             var pos = _lastContact;
@@ -269,7 +335,10 @@ namespace DazVrBridge
 
             for (var i = 0; i < 3 && remaining > 1e-5f; i++)
             {
-                if (!Physics.SphereCast(pos, SnapRadius, dir, out var hit, remaining, ~0, QueryTriggerInteraction.Ignore))
+                var blocked = _hasBox
+                    ? Physics.BoxCast(pos, _boxHalfLocal, dir, out var hit, orientation, remaining, ~0, QueryTriggerInteraction.Ignore)
+                    : Physics.SphereCast(pos, SnapRadius, dir, out hit, remaining, ~0, QueryTriggerInteraction.Ignore);
+                if (!blocked)
                 {
                     pos += dir * remaining;
                     break;
@@ -451,6 +520,8 @@ namespace DazVrBridge
         public void EndGrab(Transform hand)
         {
             _onSurface = false;
+            _wasPinned = false;
+            _hand = null;
             if (_contactDisc) _contactDisc.gameObject.SetActive(false);
             SetState(State.Idle);
             _poseSync?.SetGrabbed(Figure.Id, false);
@@ -467,6 +538,11 @@ namespace DazVrBridge
         // 0..1: how pinned against a Daz joint limit the worst bone this handle drives is.
         public void SetOverLimit(float pinned)
         {
+            // Buzz once on running out of range, so it can be felt rather than read.
+            var nowPinned = pinned > 0.6f;
+            if (nowPinned && !_wasPinned && Current == State.Grabbed) _hand?.Pulse(0.7f, 0.06f);
+            _wasPinned = nowPinned;
+
             if (Mathf.Approximately(_overLimit, pinned)) return;
             _overLimit = pinned;
             Apply();

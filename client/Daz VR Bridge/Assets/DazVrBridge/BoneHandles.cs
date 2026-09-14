@@ -41,8 +41,12 @@ namespace DazVrBridge
         public float snapRadius = 0.03f;
 
         [Header("Joint limits")]
-        [Tooltip("Turn a handle red when a bone it drives is at or past a Daz joint limit, and list them on the HUD.")]
+        [Tooltip("Turn a handle red when a bone it drives is at or past a Daz joint limit.")]
         public bool showLimits = true;
+        [Tooltip("Draw a rod through the pinned bone along the rotation that ran out: along the bone means twist, across it means bend. Faster to read than words.")]
+        public bool showLimitGizmo = true;
+        [Tooltip("Also spell it out on the HUD. Off by default: reading while posing is a nuisance.")]
+        public bool showLimitText;
 
         public readonly List<BoneHandle> All = new List<BoneHandle>();
         // Bones currently at a Daz limit, most pinned first: "l_upperarm y 40° at [-110, 40]".
@@ -55,6 +59,11 @@ namespace DazVrBridge
         string[] _pinnedText;
         float _nextFullScan;
         readonly List<(string text, float rank)> _violations = new List<(string, float)>();
+
+        // One rod, shown on whichever held bone has run out of range.
+        Transform _limitRod;
+        bool _rodWanted;
+        Vector3 _rodPos, _rodDir;
 
         void Start()
         {
@@ -100,6 +109,7 @@ namespace DazVrBridge
 
             var full = Time.time >= _nextFullScan;
             if (full) _nextFullScan = Time.time + 0.066f;
+            _rodWanted = false;
 
             for (var i = 0; i < All.Count; i++)
             {
@@ -134,6 +144,13 @@ namespace DazVrBridge
                     var kind = DazEuler.AxisKind(h.Figure, bone, axis, forward);
                     var word = status.Worst > 0.5f ? "past" : "at";
                     text = $"{id} {kind} {value:F0}° {word} [{min:F0}, {max:F0}]";
+
+                    if (held && p > 0.6f)
+                    {
+                        _rodWanted = true;
+                        _rodPos = h.Figure.Bones[bone].position;
+                        _rodDir = DazEuler.AxisWorld(h.Figure, bone, axis);
+                    }
                 }
                 _pinned[i] = pinned;
                 // Only the handle in your hand explains itself on the HUD; the rest would
@@ -142,6 +159,9 @@ namespace DazVrBridge
                 h.SetOverLimit(pinned);
             }
 
+            UpdateLimitRod();
+
+            if (!showLimitText) { LimitText = ""; return; }
             _violations.Clear();
             for (var i = 0; i < All.Count; i++)
                 if (_pinnedText[i] != null) _violations.Add((_pinnedText[i], _pinned[i]));
@@ -154,8 +174,41 @@ namespace DazVrBridge
             LimitText = "at Daz limits:\n" + string.Join("\n", lines);
         }
 
+        // A rod through the bone along the rotation axis that ran out: lying along the
+        // bone reads as twist, across it as bend. Which joint and which motion, without
+        // words.
+        void UpdateLimitRod()
+        {
+            if (!showLimitGizmo || !_rodWanted)
+            {
+                if (_limitRod) _limitRod.gameObject.SetActive(false);
+                return;
+            }
+
+            if (!_limitRod)
+            {
+                var rod = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                rod.name = "limit axis";
+                Destroy(rod.GetComponent<Collider>());
+                rod.transform.localScale = new Vector3(0.008f, 0.075f, 0.008f); // cylinders are 2 units tall
+                var r = rod.GetComponent<Renderer>();
+                r.sharedMaterial = BoneHandle.OverlayMaterial();
+                var block = new MaterialPropertyBlock();
+                var c = new Color(1f, 0.25f, 0.2f, 0.9f);
+                block.SetColor("_BaseColor", c);
+                block.SetColor("_Color", c);
+                r.SetPropertyBlock(block);
+                _limitRod = rod.transform;
+            }
+
+            _limitRod.gameObject.SetActive(true);
+            _limitRod.position = _rodPos;
+            _limitRod.up = _rodDir; // the cylinder's axis is its Y
+        }
+
         void OnDestroy()
         {
+            if (_limitRod) Destroy(_limitRod.gameObject);
             if (loader) loader.SceneBuilt -= Rebuild;
         }
 
