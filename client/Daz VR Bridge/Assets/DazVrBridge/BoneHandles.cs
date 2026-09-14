@@ -78,9 +78,24 @@ namespace DazVrBridge
 
         void Update()
         {
+            BridgeProfiler.EndFrame();
             if (All.Count == 0) return;
-            if (showLimits) UpdateLimits();
+
+            if (showLimits)
+            {
+                var tl = BridgeProfiler.Begin();
+                UpdateLimits();
+                BridgeProfiler.End("limit scan", tl);
+            }
             if (!showHandles) return;
+
+            var tv = BridgeProfiler.Begin();
+            UpdateVisibility();
+            BridgeProfiler.End("handle fade", tv);
+        }
+
+        void UpdateVisibility()
+        {
             if (!_rig) _rig = FindAnyObjectByType<VrRig>();
 
             var hands = 0;

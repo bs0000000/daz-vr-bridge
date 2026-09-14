@@ -68,6 +68,7 @@ namespace DazVrBridge
         // samples, and each one sweeps individually.
         Vector3 _contactLocal;      // the handle offset; only the sphere fallback uses it
         Vector3[] _samplesLocal;    // contact points in the bone's frame
+        float _sampleReach;         // furthest sample from the joint, for the broadphase
         Vector3 _lastEffector;
         bool _onSurface;
         Vector3 _contactPoint, _contactNormal;
@@ -264,6 +265,7 @@ namespace DazVrBridge
         void MeasureContactSamples()
         {
             _samplesLocal = null;
+            _sampleReach = 0f;
             if (!SurfaceSnap) return;
 
             SkinnedMeshRenderer smr = null;
@@ -325,7 +327,9 @@ namespace DazVrBridge
                 foreach (var u in unique) if ((u - best[d]).sqrMagnitude < 4e-4f) { dup = true; break; }
                 if (!dup) unique.Add(best[d]);
             }
-            if (unique.Count >= 4) _samplesLocal = unique.ToArray();
+            if (unique.Count < 4) return;
+            _samplesLocal = unique.ToArray();
+            foreach (var s in _samplesLocal) _sampleReach = Mathf.Max(_sampleReach, s.magnitude);
         }
 
         // 6 face + 12 edge + 8 corner directions of a cube.
@@ -352,6 +356,13 @@ namespace DazVrBridge
         // is what used to switch snapping off silently.
         Vector3 ResolveAgainstSurfaces(Vector3 desired, Quaternion orientation)
         {
+            var t0 = BridgeProfiler.Begin();
+            try { return ResolveAgainstSurfacesInner(desired, orientation); }
+            finally { BridgeProfiler.End("surface sweep", t0); }
+        }
+
+        Vector3 ResolveAgainstSurfacesInner(Vector3 desired, Quaternion orientation)
+        {
             _onSurface = false;
             if (!SurfaceSnap) return desired;
 
@@ -364,6 +375,13 @@ namespace DazVrBridge
             var pos = _lastEffector;
             const float skin = 0.002f;
             var radius = samples != null ? 0.005f : Mathf.Max(0.005f, SnapRadius);
+
+            // Broadphase: one sweep of a sphere enclosing the whole hand. A hand moving
+            // through open air is the common case, and it now costs one cast instead of
+            // one per contact sample.
+            if (samples != null &&
+                !Physics.SphereCast(pos, _sampleReach + radius, dir, out _, remaining, ~0, QueryTriggerInteraction.Ignore))
+                return desired;
 
             for (var i = 0; i < 3 && remaining > 1e-5f; i++)
             {
@@ -447,6 +465,13 @@ namespace DazVrBridge
         // the upper arm alone runs out of range long before the arm runs out of reach.
         void SolveIk(Vector3 targetPos, Quaternion targetRot)
         {
+            var t0 = BridgeProfiler.Begin();
+            try { SolveIkInner(targetPos, targetRot); }
+            finally { BridgeProfiler.End("ik solve", t0); }
+        }
+
+        void SolveIkInner(Vector3 targetPos, Quaternion targetRot)
+        {
             var root = Figure.Bones[_ikRoot];
             var mid = Figure.Bones[_ikMid];
             var shoulder = _ikShoulder >= 0 ? Figure.Bones[_ikShoulder] : null;
@@ -498,6 +523,13 @@ namespace DazVrBridge
         // Picks the roll that leaves the least total limit violation on the middle and end
         // bones: a coarse sweep, then a refinement. The cost is smooth in the roll angle.
         void RollMidBone(Quaternion targetRot)
+        {
+            var t0 = BridgeProfiler.Begin();
+            try { RollMidBoneInner(targetRot); }
+            finally { BridgeProfiler.End("roll sweep", t0); }
+        }
+
+        void RollMidBoneInner(Quaternion targetRot)
         {
             var mid = Figure.Bones[_ikMid];
             var axis = Bone.position - mid.position;
@@ -578,7 +610,10 @@ namespace DazVrBridge
         // 0 = hidden, 1 = fully visible. Hovered/grabbed handles ignore it.
         public void SetVisibility(float alpha)
         {
-            _alpha = Mathf.Clamp01(alpha);
+            alpha = Mathf.Clamp01(alpha);
+            // The fade changes continuously as a hand moves; only repaint on a visible step.
+            if (Mathf.Abs(alpha - _alpha) < 0.02f && (alpha > 0.01f) == (_alpha > 0.01f)) return;
+            _alpha = alpha;
             Apply();
         }
 
@@ -595,9 +630,14 @@ namespace DazVrBridge
             Apply();
         }
 
+        // One block reused for every handle: allocating a MaterialPropertyBlock per call
+        // meant ~26 allocations a frame once the distance fade was continuously changing.
+        static MaterialPropertyBlock _block;
+
         void Apply()
         {
             if (!_renderer) return;
+            if (_block == null) _block = new MaterialPropertyBlock();
             var c = Current == State.Grabbed ? GrabbedColor : Current == State.Hover ? HoverColor : _idleColor;
             // At a joint limit: this bone has run out of range and is why the limb stopped
             // following. (Without clamping it is also past the limit and Daz will correct it.)
@@ -606,10 +646,10 @@ namespace DazVrBridge
             _renderer.enabled = a > 0.01f;
             if (!_renderer.enabled) return;
             c.a = a;
-            var block = new MaterialPropertyBlock();
-            block.SetColor("_BaseColor", c);
-            block.SetColor("_Color", c);
-            _renderer.SetPropertyBlock(block);
+            _block.Clear();
+            _block.SetColor("_BaseColor", c);
+            _block.SetColor("_Color", c);
+            _renderer.SetPropertyBlock(_block);
         }
 
         static Material _overlayMaterial;

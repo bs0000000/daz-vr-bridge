@@ -37,6 +37,7 @@ Add **PoseSync** to the `Bridge` object. In Play mode with the Game view focused
 
 | Key | Action |
 |---|---|
+| **P** | Print how many ms per frame the bridge itself costs, broken down by limit scan, IK solve, roll sweep, surface sweep and handle fade — then reset the window. Whatever is left over is Unity, XR submission, or waiting on the headset. |
 | **T** | Self-test: Daz sends its pose, the client echoes it, Daz checks every Euler control came back within 0.01°. Result on the HUD. |
 | **C** | Commit: every bone whose rotation changed since the last Daz state is sent as one undo step ("VR pose"). Rotate a bone under `DazScene/<figure>/skeleton` with the Scene-view gizmo first. |
 | **R** | Re-request the scene. |

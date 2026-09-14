@@ -69,11 +69,13 @@ namespace DazVrBridge
             if (kb.tKey.wasPressedThisFrame) { SelfTest(); return true; }
             if (kb.rKey.wasPressedThisFrame) { loader.RequestScene(); return true; }
             if (kb.dKey.wasPressedThisFrame) { DebugBoneOffsets(); return true; }
+            if (kb.pKey.wasPressedThisFrame) { ReportCost(); return true; }
 #else
             if (Input.GetKeyDown(KeyCode.C)) { CommitAll(); return true; }
             if (Input.GetKeyDown(KeyCode.T)) { SelfTest(); return true; }
             if (Input.GetKeyDown(KeyCode.R)) { loader.RequestScene(); return true; }
             if (Input.GetKeyDown(KeyCode.D)) { DebugBoneOffsets(); return true; }
+            if (Input.GetKeyDown(KeyCode.P)) { ReportCost(); return true; }
 #endif
             return false;
         }
@@ -183,6 +185,16 @@ namespace DazVrBridge
         }
 
         // ---- diagnostics
+
+        // P: how much of each frame the bridge itself accounts for, then start a fresh
+        // window. Anything unaccounted for is Unity, XR submission, or waiting on the
+        // headset's refresh — which is what caps the frame rate once a headset is live.
+        [ContextMenu("Report bridge cost")]
+        public void ReportCost()
+        {
+            Debug.Log(BridgeProfiler.Report());
+            BridgeProfiler.Reset();
+        }
 
         // D key: for a few bones, distance between the live bone position and the
         // centroid of the skinned mesh's vertices that belong (>= 0.9) to that bone.
