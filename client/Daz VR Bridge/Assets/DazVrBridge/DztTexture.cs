@@ -1,6 +1,6 @@
 // A texture asset, already in the form the GPU wants it.
 //
-//   "DZT1"  u32 format (1 = BC1, 3 = BC3)  u32 width  u32 height  u32 mips
+//   "DZT1"  u32 format (1 = BC1, 3 = BC3, 5 = BC5)  u32 width  u32 height  u32 mips
 //   then every mip level, largest first, back to back
 //
 // The plugin does the decode, the scale, the mip chain and the block compression, so
@@ -28,8 +28,12 @@ namespace DazVrBridge
             var mips = (int)BitConverter.ToUInt32(bytes, 16);
             if (width <= 0 || height <= 0 || mips <= 0) return null;
 
+            // A normal map holds numbers, not colour: read through sRGB it would be
+            // wrong by a gamma curve, and the lighting would be subtly but everywhere off.
+            var normal = format == 5;
             var texture = new Texture2D(width, height,
-                format == 3 ? TextureFormat.DXT5 : TextureFormat.DXT1, mips, linear: false)
+                normal ? TextureFormat.BC5 : format == 3 ? TextureFormat.DXT5 : TextureFormat.DXT1,
+                mips, linear: normal)
             {
                 name = name,
                 wrapMode = TextureWrapMode.Repeat,
@@ -44,7 +48,7 @@ namespace DazVrBridge
             if (payload != expected)
             {
                 Debug.LogWarning($"[DazVrBridge] {name}: texture is {payload} bytes, Unity wants {expected} " +
-                    $"({width}x{height}, {mips} mips, {(format == 3 ? "DXT5" : "DXT1")})");
+                    $"({width}x{height}, {mips} mips, {(normal ? "BC5" : format == 3 ? "DXT5" : "DXT1")})");
                 UnityEngine.Object.Destroy(texture);
                 return null;
             }

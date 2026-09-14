@@ -133,14 +133,15 @@ per vertex: u16[influences] bone_index, f32[influences] weight
 ```
 
 **`materials` — JSON.** `{ materials: [ { index, name, base_color:[r,g,b] 0–1,
-opacity_map: path|null, color_map: path|null, base_tex: hash|null, cutout: true? } ] }`.
+opacity_map: path|null, color_map: path|null, base_tex: hash|null, cutout: true?,
+cutoff, normal_map: path|null, normal_tex: hash|null, normal_scale } ] }`.
 The map paths are on the Daz machine and are there for diagnostics only; `base_tex` is
 the asset hash the client actually asks for. `cutout` marks a surface whose opacity map
 makes it alpha-tested, and `cutoff` is where that test sits — the mip chain is built to
 hold the same alpha coverage at exactly that value, so both ends must use it rather
 than each picking one.
 
-**`texture` assets — binary, `DZT1`.** `"DZT1"`, `u32 format` (1 = BC1, 3 = BC3),
+**`texture` assets — binary, `DZT1`.** `"DZT1"`, `u32 format` (1 = BC1, 3 = BC3, 5 = BC5),
 `u32 width`, `u32 height`, `u32 mips`, then every mip level largest first, back to
 back, laid out for `Texture2D.LoadRawTextureData`. Colour and opacity are **merged**:
 Daz keeps opacity in a separate greyscale file, so its luminance becomes this
@@ -157,6 +158,15 @@ read, producing one costs a full decode plus a mip chain plus block compression.
 plugin produces the bytes when a client first asks for that hash, and keeps them.
 Because the hash is not a content hash, the client stores these without verifying
 them; the plugin checks the produced size against the size it promised instead.
+
+A `normal_tex` is a separate asset in BC5 and must be sampled **linear**: it holds
+numbers, not colour, and reading it through sRGB is wrong by a gamma curve. BC5 keeps X
+and Y at BC4 precision each and drops Z for the shader to rebuild; BC1 bands a normal
+map badly enough to see. Daz ships no tangents, so the client derives them from the UVs.
+`DzMaterial` promises only a colour and an opacity map, so the plugin reads the normal
+map from `DzDefaultMaterial::getNormalValueMap()` where it exists and otherwise from the
+property Daz labels "Normal Map", whose value is the strength and whose map value is the
+texture — that strength is `normal_scale`.
 
 The manifest's `assets` entries for textures also carry `w`, `h`, `mips` and
 `format`, so a client can budget before fetching anything.

@@ -95,7 +95,8 @@ namespace DazVrBridge
         // The wait exists because materials are built the moment geometry lands, which is
         // the whole point -- a texture is attached whenever it turns up after that.
         readonly Dictionary<string, byte[]> _textureBytes = new Dictionary<string, byte[]>();
-        readonly Dictionary<string, List<Material>> _textureSlots = new Dictionary<string, List<Material>>();
+        readonly Dictionary<string, List<(Material material, bool normal)>> _textureSlots =
+            new Dictionary<string, List<(Material, bool)>>();
         readonly Dictionary<string, Texture2D> _builtTextures = new Dictionary<string, Texture2D>();
         readonly List<string> _pendingTextures = new List<string>();
         bool _nodesDirty;
@@ -682,6 +683,10 @@ namespace DazVrBridge
             }
 
             mesh.RecalculateNormals();
+            // Normal mapping reads the tangent frame, and Daz ships none. Derived from the
+            // UVs, so it only means anything where there are UVs -- which is also the only
+            // place a normal map can be sampled.
+            if (src.Uvs != null) mesh.RecalculateTangents();
             mesh.RecalculateBounds();
             return mesh;
         }
@@ -762,7 +767,13 @@ namespace DazVrBridge
                         m.EnableKeyword("_ALPHATOMASK_ON");
                         m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
                     }
-                    Want(def.Value<string>("base_tex"), m);
+                    Want(def.Value<string>("base_tex"), m, normal: false);
+                    if (!string.IsNullOrEmpty(def.Value<string>("normal_tex")))
+                    {
+                        m.EnableKeyword("_NORMALMAP");
+                        if (m.HasProperty("_BumpScale")) m.SetFloat("_BumpScale", def.Value<float?>("normal_scale") ?? 1f);
+                        Want(def.Value<string>("normal_tex"), m, normal: true);
+                    }
                 }
                 mats[i] = m;
             }
@@ -772,12 +783,12 @@ namespace DazVrBridge
         // Register a material's interest in a texture, and attach it now if it has
         // already landed. Everything about the texture path is written this way round:
         // the scene is built without waiting, and maps arrive into it afterwards.
-        void Want(string hash, Material material)
+        void Want(string hash, Material material, bool normal)
         {
             if (string.IsNullOrEmpty(hash)) return;
             if (!_textureSlots.TryGetValue(hash, out var slots))
-                _textureSlots[hash] = slots = new List<Material>();
-            slots.Add(material);
+                _textureSlots[hash] = slots = new List<(Material, bool)>();
+            slots.Add((material, normal));
             if (_textureBytes.ContainsKey(hash)) ApplyTexture(hash);
         }
 
@@ -792,9 +803,14 @@ namespace DazVrBridge
                 _builtTextures[hash] = texture;
                 _ownedResources.Add(texture);
             }
-            foreach (var m in slots)
+            foreach (var (m, normal) in slots)
             {
                 if (!m) continue;
+                if (normal)
+                {
+                    if (m.HasProperty("_BumpMap")) m.SetTexture("_BumpMap", texture);
+                    continue;
+                }
                 if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", texture);
                 if (m.HasProperty("_MainTex")) m.SetTexture("_MainTex", texture);
             }

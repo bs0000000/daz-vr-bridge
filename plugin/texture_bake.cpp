@@ -15,7 +15,7 @@ namespace {
 
 // Blob layout, little-endian, matching the client's DztTexture:
 //
-//   "DZT1"  u32 format (1 = BC1, 3 = BC3)  u32 width  u32 height  u32 mips
+//   "DZT1"  u32 format (1 = BC1, 3 = BC3, 5 = BC5)  u32 width  u32 height  u32 mips
 //   then every mip level, largest first, back to back
 //
 // No per-level offsets: block counts are arithmetic, and Unity wants the levels
@@ -29,7 +29,7 @@ const int kHeaderBytes = 4 + 4 * 4;
 // the encoder. A texture's hash otherwise names only its source maps, so a fix in
 // here would leave every client happily serving stale bytes from disk out of a cache
 // that had no way to know they were wrong. Twice now.
-const int kPipelineVersion = 3;
+const int kPipelineVersion = 4;
 
 void writeU32( QByteArray &out, quint32 v )
 {
@@ -82,9 +82,15 @@ int blocksFor( int dimension )
 // Unity's chain runs all the way to 1x1, and every level below 4x4 still occupies
 // one whole block. Counting it any other way makes LoadRawTextureData reject the
 // buffer outright, so the arithmetic here has to match theirs exactly.
-qint64 chainBytes( int width, int height, int mips, bool alpha )
+// BC1 is eight bytes a block; BC3 (a colour block plus an alpha block) and BC5 (two
+// channel blocks) are sixteen.
+int blockBytesFor( TexRole role, bool alpha )
 {
-	const int blockBytes = alpha ? 16 : 8;
+	return role == TexRole::Normal || alpha ? 16 : 8;
+}
+
+qint64 chainBytes( int width, int height, int mips, int blockBytes )
+{
 	qint64 total = 0;
 	for ( int level = 0; level < mips; ++level )
 	{
@@ -196,13 +202,27 @@ void writeColorBlock( QByteArray &out, const QRgb block[ 16 ] )
 	writeU32( out, indices );
 }
 
-void writeAlphaBlock( QByteArray &out, const QRgb block[ 16 ] )
+int channelOf( QRgb c, int channel )
+{
+	switch ( channel )
+	{
+		case 0: return qRed( c );
+		case 1: return qGreen( c );
+		case 2: return qBlue( c );
+		default: return qAlpha( c );
+	}
+}
+
+// One eight-bit channel, sixteen texels: two endpoints and three bits each. This is
+// BC3's alpha block and it is also exactly BC4, which is why BC5 is two of these and
+// costs no new encoder.
+void writeChannelBlock( QByteArray &out, const QRgb block[ 16 ], int channel )
 {
 	int low = 255, high = 0;
 	for ( int i = 0; i < 16; ++i )
 	{
-		low = qMin( low, qAlpha( block[ i ] ) );
-		high = qMax( high, qAlpha( block[ i ] ) );
+		low = qMin( low, channelOf( block[ i ], channel ) );
+		high = qMax( high, channelOf( block[ i ], channel ) );
 	}
 
 	// a0 > a1 is the eight-value mode: both endpoints plus six interpolated. The
@@ -232,7 +252,7 @@ void writeAlphaBlock( QByteArray &out, const QRgb block[ 16 ] )
 	quint64 indices = 0;
 	for ( int i = 0; i < 16; ++i )
 	{
-		const int a = qAlpha( block[ i ] );
+		const int a = channelOf( block[ i ], channel );
 		int bestSlot = 0;
 		int bestError = INT_MAX;
 		for ( int s = 0; s < 8; ++s )
@@ -304,7 +324,7 @@ void matchCoverage( QImage &level, float target, int cutoff )
 	}
 }
 
-void compressLevel( const QImage &image, bool alpha, QByteArray &out )
+void compressLevel( const QImage &image, TexRole role, bool alpha, QByteArray &out )
 {
 	const int width = image.width();
 	const int height = image.height();
@@ -324,9 +344,17 @@ void compressLevel( const QImage &image, bool alpha, QByteArray &out )
 					block[ y * 4 + x ] = image.pixel( sx, sy );
 				}
 			}
+			if ( role == TexRole::Normal )
+			{
+				// X and Y only. Z is positive for a tangent-space normal, so the shader
+				// rebuilds it, and dropping it spends the bits where they show.
+				writeChannelBlock( out, block, 0 );
+				writeChannelBlock( out, block, 1 );
+				continue;
+			}
 			if ( alpha )
 			{
-				writeAlphaBlock( out, block );
+				writeChannelBlock( out, block, 3 );
 			}
 			writeColorBlock( out, block );
 		}
@@ -370,7 +398,7 @@ TextureRef describeTexture( const QString &colorPath, const QString &opacityPath
 	ref.width = powerOfTwoAtMost( source.width(), qMax( 4, texMax ) );
 	ref.height = powerOfTwoAtMost( source.height(), qMax( 4, texMax ) );
 	ref.mips = mipCount( ref.width, ref.height );
-	ref.size = kHeaderBytes + chainBytes( ref.width, ref.height, ref.mips, ref.alpha );
+	ref.size = kHeaderBytes + chainBytes( ref.width, ref.height, ref.mips, blockBytesFor( ref.role, ref.alpha ) );
 
 	// The sources' identity, not their pixels. Two surfaces sharing maps share one
 	// asset and one cache entry; editing a map in place changes its modification
@@ -388,6 +416,36 @@ TextureRef describeTexture( const QString &colorPath, const QString &opacityPath
 	digest.addData( QByteArray::number( ref.width ) );
 	digest.addData( QByteArray::number( ref.height ) );
 	digest.addData( ref.alpha ? "bc3" : "bc1" );
+	digest.addData( QByteArray::number( kPipelineVersion ) );
+	ref.hash = "sha1:" % QString::fromLatin1( digest.result().toHex() );
+	return ref;
+}
+
+TextureRef describeNormal( const QString &path, int texMax )
+{
+	TextureRef ref;
+	QFileInfo info;
+	QSize source;
+	if ( !readable( path, info, source ) )
+	{
+		return ref;
+	}
+
+	ref.role = TexRole::Normal;
+	ref.colorPath = info.absoluteFilePath();
+	ref.alpha = false;
+	ref.width = powerOfTwoAtMost( source.width(), qMax( 4, texMax ) );
+	ref.height = powerOfTwoAtMost( source.height(), qMax( 4, texMax ) );
+	ref.mips = mipCount( ref.width, ref.height );
+	ref.size = kHeaderBytes + chainBytes( ref.width, ref.height, ref.mips, blockBytesFor( ref.role, false ) );
+
+	QCryptographicHash digest( QCryptographicHash::Sha1 );
+	digest.addData( ref.colorPath.toUtf8() );
+	digest.addData( QByteArray::number( info.lastModified().toMSecsSinceEpoch() ) );
+	digest.addData( QByteArray::number( info.size() ) );
+	digest.addData( QByteArray::number( ref.width ) );
+	digest.addData( QByteArray::number( ref.height ) );
+	digest.addData( "bc5" );
 	digest.addData( QByteArray::number( kPipelineVersion ) );
 	ref.hash = "sha1:" % QString::fromLatin1( digest.result().toHex() );
 	return ref;
@@ -426,7 +484,7 @@ QByteArray produceTexture( const TextureRef &ref, QString* errorOut )
 	// Daz stores opacity as a greyscale image in its own file, so its luminance has
 	// to become this texture's alpha. Without this step BC3 would carry the 255 that
 	// an opaque JPEG decodes to and clip nothing at all.
-	if ( !ref.opacityPath.isEmpty() )
+	if ( !ref.opacityPath.isEmpty() && ref.role == TexRole::Base )
 	{
 		QImage mask;
 		if ( !loadImage( ref.opacityPath, mask ) )
@@ -462,14 +520,15 @@ QByteArray produceTexture( const TextureRef &ref, QString* errorOut )
 	QByteArray out;
 	out.reserve( int( ref.size ) );
 	out.append( kMagic, 4 );
-	writeU32( out, ref.alpha ? 3 : 1 );
+	writeU32( out, ref.role == TexRole::Normal ? 5u : ref.alpha ? 3u : 1u );
 	writeU32( out, quint32( ref.width ) );
 	writeU32( out, quint32( ref.height ) );
 	writeU32( out, quint32( ref.mips ) );
 	Q_ASSERT( out.size() == kHeaderBytes );
 
 	const int cutoff = int( kAlphaCutoff * 255.0f );
-	const float baseCoverage = ref.alpha ? coverage( image, 1.0f, cutoff ) : 0.0f;
+	const bool holdCoverage = ref.alpha && ref.role == TexRole::Base;
+	const float baseCoverage = holdCoverage ? coverage( image, 1.0f, cutoff ) : 0.0f;
 
 	QImage level = image;
 	for ( int mip = 0; mip < ref.mips; ++mip )
@@ -479,12 +538,12 @@ QByteArray produceTexture( const TextureRef &ref, QString* errorOut )
 		if ( level.width() != w || level.height() != h )
 		{
 			level = image.scaled( w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation );
-			if ( ref.alpha )
+			if ( holdCoverage )
 			{
 				matchCoverage( level, baseCoverage, cutoff );
 			}
 		}
-		compressLevel( level, ref.alpha, out );
+		compressLevel( level, ref.role, ref.alpha, out );
 	}
 
 	if ( out.size() != ref.size )

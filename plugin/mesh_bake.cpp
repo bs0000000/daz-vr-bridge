@@ -19,7 +19,10 @@
 #include "dzfloatproperty.h"
 #include "dzintproperty.h"
 #include "dzmap.h"
+#include "dzdefaultmaterial.h"
+#include "dzimageproperty.h"
 #include "dzmaterial.h"
+#include "dznumericproperty.h"
 #include "dzmatrix3.h"
 #include "dznode.h"
 #include "dzobject.h"
@@ -58,6 +61,48 @@ struct Influence
 QString textureFile( const DzTexture* tex )
 {
 	return tex ? tex->getFilename() : QString();
+}
+
+// DzMaterial only promises a colour map and an opacity map; a normal map lives in the
+// derived type. The classic surfaces expose it directly, while Iray Uber carries it as
+// a named property whose value is a number and whose map is the texture -- so try the
+// typed accessor first and fall back to the label, which is what Daz shows in Surfaces.
+DzTexture* normalMapOf( const DzMaterial* mat, double &strength )
+{
+	strength = 1.0;
+	if ( const DzDefaultMaterial* def = qobject_cast<const DzDefaultMaterial*>( mat ) )
+	{
+		if ( DzTexture* map = def->getNormalValueMap() )
+		{
+			return map;
+		}
+	}
+
+	static const char* labels[] = { "Normal Map", "Detail Normal Map" };
+	for ( const char* label : labels )
+	{
+		DzProperty* prop = mat->findPropertyByLabel( label );
+		if ( !prop )
+		{
+			continue;
+		}
+		if ( DzImageProperty* image = qobject_cast<DzImageProperty*>( prop ) )
+		{
+			if ( DzTexture* map = image->getValue() )
+			{
+				return map;
+			}
+		}
+		if ( DzNumericProperty* numeric = qobject_cast<DzNumericProperty*>( prop ) )
+		{
+			if ( DzTexture* map = numeric->getMapValue() )
+			{
+				strength = numeric->getDoubleValue();
+				return map;
+			}
+		}
+	}
+	return nullptr;
 }
 
 // Records every map it finds into `textures` and writes the asset hash beside the
@@ -112,6 +157,30 @@ QJsonObject bakeMaterials( const DzShape* shape, const BakeOptions &opts, QList<
 		if ( !color.isEmpty() ) m[ "color_map" ] = color;
 		m[ "base_tex" ] = reference( color, opacity );
 		if ( !opacity.isEmpty() ) { m[ "cutout" ] = true; m[ "cutoff" ] = kAlphaCutoff; }
+
+		// Normal maps ride on "full", since without colour they would be the only thing
+		// breaking up a clay surface and would read as dirt.
+		if ( opts.textures == "full" )
+		{
+			double strength = 1.0;
+			const QString normal = textureFile( normalMapOf( mat, strength ) );
+			if ( !normal.isEmpty() )
+			{
+				const TextureRef ref = describeNormal( normal, opts.texMax );
+				if ( ref.isValid() )
+				{
+					bool known = false;
+					for ( const TextureRef &t : textures )
+					{
+						if ( t.hash == ref.hash ) { known = true; break; }
+					}
+					if ( !known ) textures.append( ref );
+					m[ "normal_map" ] = normal;
+					m[ "normal_tex" ] = ref.hash;
+					m[ "normal_scale" ] = strength;
+				}
+			}
+		}
 		mats.append( m );
 	}
 

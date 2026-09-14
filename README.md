@@ -67,7 +67,7 @@ some other reason.
 
 ## Backlog
 
-- Mirror posing, normal maps, selection mirroring, per-node resync, and a Genesis 8 profile.
+- Mirror posing, selection mirroring, per-node resync, and a Genesis 8 profile.
 - Turn on 4x MSAA: cutout materials already ask for alpha-to-coverage, which is inert until then and is
   the real fix for eyebrow fibres sparkling under head motion.
 - Exercise and profile the intended two-computer LAN setup.

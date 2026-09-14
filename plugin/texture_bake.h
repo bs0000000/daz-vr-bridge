@@ -31,8 +31,17 @@ const float kAlphaCutoff = 0.35f;
 // a fully opaque BC3 and clip nothing; its luminance has to become the alpha of the
 // colour map it belongs with. Merging here also means the client binds one map and
 // the GPU samples one map.
+// What a texture is for. It decides the block format and, on the client, whether the
+// data is read as colour or as numbers: a normal map in sRGB is wrong by a gamma curve.
+enum class TexRole
+{
+	Base,	// colour, with opacity in alpha: BC1 or BC3, sRGB
+	Normal,	// tangent-space normal: BC5, two channels, linear
+};
+
 struct TextureRef
 {
+	TexRole	role = TexRole::Base;
 	QString	colorPath;		// absolute, on the Daz machine; may be empty
 	QString	opacityPath;	// absolute; empty when the surface is not a cutout
 	QString	hash;			// "sha1:<hex>" of the sources' identity, not their bytes
@@ -50,6 +59,10 @@ struct TextureRef
 // neither can be read, which the caller should treat as "no texture" rather than as
 // an error: a scene referencing a map the user has since moved is ordinary.
 TextureRef	describeTexture( const QString &colorPath, const QString &opacityPath, int texMax );
+
+// A tangent-space normal map. BC5 keeps X and Y at BC4 precision each and drops Z,
+// which the shader rebuilds; BC1 would band a normal map badly enough to see.
+TextureRef	describeNormal( const QString &path, int texMax );
 
 // Decodes, scales, builds the mip chain and compresses. Seconds of work for a
 // large map, so this belongs on an asset request and never in a bake.
