@@ -37,8 +37,8 @@ namespace DazVrBridge
         [Header("Surfaces")]
         [Tooltip("Hands and feet stop at prop surfaces instead of passing through them.")]
         public bool surfaceSnap = true;
-        [Tooltip("Radius of the sphere swept for the hand or foot, in meters.")]
-        public float snapRadius = 0.05f;
+        [Tooltip("Half-thickness of the hand or foot, in meters. The sweep is centred on the middle of the bone, so this is how far that point stops from a surface.")]
+        public float snapRadius = 0.03f;
 
         [Header("Joint limits")]
         [Tooltip("Turn a handle red when a bone it drives is at or past a Daz joint limit, and list them on the HUD.")]
@@ -108,6 +108,9 @@ namespace DazVrBridge
                 // The held handle matters every frame; everything else is just the display.
                 if (!full && h.Current == BoneHandle.State.Idle) continue;
 
+                var held = h.Current == BoneHandle.State.Grabbed;
+                var forward = RigProfile.Load(h.Figure.Rig).ForwardOf(h.Figure.Go.transform);
+
                 var pinned = 0f;
                 string text = null;
                 foreach (var bone in h.ControlledBones)
@@ -116,18 +119,26 @@ namespace DazVrBridge
                     if (!status.Valid) continue;
                     var p = status.Pinned();
                     if (p <= 0f || p <= pinned) continue;
+
+                    // A handle you are not holding only reddens when it is genuinely past
+                    // a limit (clamping off). Merely resting against one is normal.
+                    if (!held && status.Worst <= 0.5f) continue;
                     pinned = p;
 
-                    var axis = status.WorstAxis;
-                    var value = axis == "x" ? status.Euler.x : axis == "y" ? status.Euler.y : status.Euler.z;
-                    var min = axis == "x" ? h.Figure.LimitMin[bone].x : axis == "y" ? h.Figure.LimitMin[bone].y : h.Figure.LimitMin[bone].z;
-                    var max = axis == "x" ? h.Figure.LimitMax[bone].x : axis == "y" ? h.Figure.LimitMax[bone].y : h.Figure.LimitMax[bone].z;
+                    var axisName = status.WorstAxis;
+                    var axis = axisName == "x" ? 0 : axisName == "y" ? 1 : 2;
+                    var value = axis == 0 ? status.Euler.x : axis == 1 ? status.Euler.y : status.Euler.z;
+                    var min = axis == 0 ? h.Figure.LimitMin[bone].x : axis == 1 ? h.Figure.LimitMin[bone].y : h.Figure.LimitMin[bone].z;
+                    var max = axis == 0 ? h.Figure.LimitMax[bone].x : axis == 1 ? h.Figure.LimitMax[bone].y : h.Figure.LimitMax[bone].z;
                     var id = h.Figure.BoneJson[bone].Value<string>("id");
+                    var kind = DazEuler.AxisKind(h.Figure, bone, axis, forward);
                     var word = status.Worst > 0.5f ? "past" : "at";
-                    text = $"{id} {axis} {value:F0}° {word} [{min:F0}, {max:F0}]";
+                    text = $"{id} {kind} {value:F0}° {word} [{min:F0}, {max:F0}]";
                 }
                 _pinned[i] = pinned;
-                _pinnedText[i] = text;
+                // Only the handle in your hand explains itself on the HUD; the rest would
+                // just be a wall of bones that happen to rest against a limit.
+                _pinnedText[i] = held ? text : null;
                 h.SetOverLimit(pinned);
             }
 

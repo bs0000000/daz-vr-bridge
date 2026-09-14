@@ -196,6 +196,11 @@ PoseFreeze::PoseFreeze( DzSkeleton* figure )
 	// sees "zero pose" entries, and nothing here is undoable by accident.
 	DzUndoStackLock lock;
 
+	// Snapshot with getRawValue(), never getValue(): getValue() is the value *after*
+	// ERC controllers, while setValue() writes the raw one. Snapshotting the combined
+	// value and restoring it as raw bakes the controller's contribution into the base,
+	// and it accumulates on every bake — Genesis 9's shape-driven hip lift was moving
+	// the figure up ~6.9 cm per scene load.
 	auto freezeShape = [this]( DzNode* node )
 	{
 		DzObject* obj = node->getObject();
@@ -204,7 +209,7 @@ PoseFreeze::PoseFreeze( DzSkeleton* figure )
 		{
 			if ( DzIntProperty* lvl = shape->getSubDLevelControl() )
 			{
-				m_saved.append( Saved{ nullptr, 0.0, lvl, lvl->getValue() } );
+				m_saved.append( Saved{ nullptr, 0.0, lvl, lvl->getRawValue() } );
 				lvl->setValue( 0 );
 			}
 		}
@@ -215,7 +220,7 @@ PoseFreeze::PoseFreeze( DzSkeleton* figure )
 	{
 		if ( p )
 		{
-			m_saved.append( Saved{ p, p->getValue(), nullptr, 0 } );
+			m_saved.append( Saved{ p, p->getRawValue(), nullptr, 0 } );
 			p->setValue( 0.0f );
 		}
 	};

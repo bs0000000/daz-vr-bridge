@@ -59,7 +59,8 @@ void	writeCameraLens( QJsonObject &into, DzCamera* camera );
 struct EulerSnapshot
 {
 	QString							figureId;
-	QHash<QString, QVector<double>>	rotDeg;	// bone id -> [x, y, z]
+	QHash<QString, QVector<double>>	rotDeg;	// bone id -> [x, y, z], effective (for comparing)
+	QHash<QString, QVector<double>>	rotRaw;	// bone id -> [x, y, z], undriven (for restoring)
 };
 
 EulerSnapshot	snapshotEulers( DzSkeleton* figure );

@@ -59,14 +59,18 @@ namespace DazVrBridge
         public bool RollAssist = true;
         public int IkIterations = 4;
         public bool SurfaceSnap = true;
-        public float SnapRadius = 0.05f;
+        public float SnapRadius = 0.03f;
 
-        // Where the effector actually ended up last frame, which is where the next
-        // frame's sweep starts. Surfaces are resolved by moving from there, not by
-        // testing the controller's position, so the hand slides instead of sticking.
-        Vector3 _lastEffector;
+        // Contact is swept at the MIDDLE of the hand or foot, not at the wrist or ankle:
+        // the joint is not the part that touches a table, and sweeping there left the
+        // whole hand hovering a full radius above the surface. The handle already sits at
+        // the middle of the bone, so its own local offset is the contact point.
+        Vector3 _contactLocal;
+        Vector3 _lastContact;
         bool _onSurface;
+        Vector3 _contactPoint, _contactNormal;
         public bool OnSurface => _onSurface;
+        Transform _contactDisc;
 
         Color _idleColor = new Color(0.55f, 0.65f, 0.85f, 1f);
         static readonly Color RootColor = new Color(1.0f, 0.55f, 0.25f, 1f);
@@ -87,6 +91,7 @@ namespace DazVrBridge
             var seg = DazSpace.Pos(b["end"]) - DazSpace.Pos(b["origin"]);
             var local = Quaternion.Inverse(DazSpace.Rot(b["orient"])) * seg;
             transform.localPosition = local * 0.5f;
+            _contactLocal = transform.localPosition;
 
             var col = gameObject.AddComponent<SphereCollider>();
             col.radius = radius;
@@ -195,7 +200,7 @@ namespace DazVrBridge
             _offsetRot = Quaternion.Inverse(hand.rotation) * Bone.rotation;
             _bendHint = Vector3.zero; // the solver seeds it from the limb's current bend
             if (_ikShoulder >= 0) _shoulderRot0 = Figure.Bones[_ikShoulder].rotation;
-            _lastEffector = Bone.position;
+            _lastContact = Bone.position + Bone.rotation * _contactLocal;
             _onSurface = false;
             SetState(State.Grabbed);
             if (!_poseSync) _poseSync = FindAnyObjectByType<PoseSync>();
@@ -216,9 +221,13 @@ namespace DazVrBridge
             {
                 // Carry the hand/foot; the limb above solves to reach it. Props stop it:
                 // a hand put on an armrest rests there instead of passing through.
-                var desired = hand.position + hand.rotation * _offsetPos;
-                _lastEffector = ResolveAgainstSurfaces(desired);
-                SolveIk(_lastEffector, hand.rotation * _offsetRot);
+                var targetRot = hand.rotation * _offsetRot;
+                var desiredEffector = hand.position + hand.rotation * _offsetPos;
+
+                // Resolve where the palm/sole may go, then put the joint back under it.
+                _lastContact = ResolveAgainstSurfaces(desiredEffector + targetRot * _contactLocal);
+                SolveIk(_lastContact - targetRot * _contactLocal, targetRot);
+                ShowContact();
                 return;
             }
 
@@ -245,17 +254,17 @@ namespace DazVrBridge
             _onSurface = false;
             if (!SurfaceSnap || SnapRadius <= 0f) return desired;
 
-            var motion = desired - _lastEffector;
+            var motion = desired - _lastContact;
             var remaining = motion.magnitude;
-            if (remaining < 1e-5f) return desired;
+            if (remaining < 1e-5f) return _lastContact;
 
             // Already intersecting something (a prop moved onto the hand, or the pose
             // started inside one): do not fight it, or the hand would never get out.
-            if (Physics.CheckSphere(_lastEffector, SnapRadius, ~0, QueryTriggerInteraction.Ignore))
+            if (Physics.CheckSphere(_lastContact, SnapRadius, ~0, QueryTriggerInteraction.Ignore))
                 return desired;
 
             var dir = motion / remaining;
-            var pos = _lastEffector;
+            var pos = _lastContact;
             const float skin = 0.001f;
 
             for (var i = 0; i < 3 && remaining > 1e-5f; i++)
@@ -267,6 +276,9 @@ namespace DazVrBridge
                 }
 
                 _onSurface = true;
+                _contactPoint = hit.point;
+                _contactNormal = hit.normal;
+
                 var travelled = Mathf.Max(0f, hit.distance - skin);
                 pos += dir * travelled;
                 remaining -= travelled;
@@ -277,6 +289,38 @@ namespace DazVrBridge
                 dir = slide / remaining;
             }
             return pos;
+        }
+
+        // A cyan disc lying on the surface at the contact point: resting on something
+        // and running out of joint range feel the same through a controller, so they
+        // need to look different. Red handle = joint at its limit. Disc = touching.
+        void ShowContact()
+        {
+            if (!_onSurface)
+            {
+                if (_contactDisc) _contactDisc.gameObject.SetActive(false);
+                return;
+            }
+
+            if (!_contactDisc)
+            {
+                var disc = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                disc.name = "contact";
+                Destroy(disc.GetComponent<Collider>());
+                disc.transform.localScale = new Vector3(0.12f, 0.0015f, 0.12f);
+                var r = disc.GetComponent<Renderer>();
+                r.sharedMaterial = OverlayMaterial();
+                var block = new MaterialPropertyBlock();
+                var c = new Color(0.2f, 0.9f, 1f, 0.75f);
+                block.SetColor("_BaseColor", c);
+                block.SetColor("_Color", c);
+                r.SetPropertyBlock(block);
+                _contactDisc = disc.transform;
+            }
+
+            _contactDisc.gameObject.SetActive(true);
+            _contactDisc.position = _contactPoint + _contactNormal * 0.002f;
+            _contactDisc.up = _contactNormal; // the cylinder's axis is its Y
         }
 
         // The limb solve.
@@ -397,8 +441,17 @@ namespace DazVrBridge
             sh.rotation = partial * _shoulderRot0;
         }
 
+        // The disc lives at the scene root (it follows a surface, not the bone), so it
+        // has to be cleaned up by hand when the scene is rebuilt.
+        void OnDestroy()
+        {
+            if (_contactDisc) Destroy(_contactDisc.gameObject);
+        }
+
         public void EndGrab(Transform hand)
         {
+            _onSurface = false;
+            if (_contactDisc) _contactDisc.gameObject.SetActive(false);
             SetState(State.Idle);
             _poseSync?.SetGrabbed(Figure.Id, false);
             _poseSync?.Commit(Figure, _ik != null ? $"VR pose: {_ik.Name}" : $"VR pose: {BoneId}");

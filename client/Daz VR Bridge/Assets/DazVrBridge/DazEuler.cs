@@ -73,10 +73,13 @@ namespace DazVrBridge
                 Overshoot(status.Euler.x, min.x, max.x),
                 Overshoot(status.Euler.y, min.y, max.y),
                 Overshoot(status.Euler.z, min.z, max.z));
+            // An axis Daz locks shut (min == max, e.g. l_forearm z[0,0]) is permanently
+            // "at its limit" and is never why a reach failed, so it reports no slack
+            // pressure at all. Without this, every forearm and shin reads as pinned.
             status.Slack = new Vector3(
-                Mathf.Min(status.Euler.x - min.x, max.x - status.Euler.x),
-                Mathf.Min(status.Euler.y - min.y, max.y - status.Euler.y),
-                Mathf.Min(status.Euler.z - min.z, max.z - status.Euler.z));
+                Locked(min.x, max.x) ? float.MaxValue : Mathf.Min(status.Euler.x - min.x, max.x - status.Euler.x),
+                Locked(min.y, max.y) ? float.MaxValue : Mathf.Min(status.Euler.y - min.y, max.y - status.Euler.y),
+                Locked(min.z, max.z) ? float.MaxValue : Mathf.Min(status.Euler.z - min.z, max.z - status.Euler.z));
             return status;
         }
 
@@ -118,6 +121,7 @@ namespace DazVrBridge
 
             var min = fig.LimitMin[boneIndex];
             var max = fig.LimitMax[boneIndex];
+            // Clamping still uses the real ranges, locked axes included: Daz will.
             var clamped = new Vector3(
                 Mathf.Clamp(status.Euler.x, min.x, max.x),
                 Mathf.Clamp(status.Euler.y, min.y, max.y),
@@ -150,11 +154,37 @@ namespace DazVrBridge
             }
         }
 
+        static bool Locked(float min, float max) => max - min < 0.5f;
+
         static float Overshoot(float value, float min, float max)
         {
             if (value < min) return min - value;
             if (value > max) return value - max;
             return 0f;
+        }
+
+        // What kind of motion a Daz rotation axis produces on this bone, so a readout can
+        // say "twist" instead of "z". Derived, not tabulated: compare the axis's world
+        // direction to the bone's own length and to the figure's left-right axis.
+        //   along the bone            -> twist
+        //   about the body's L/R axis -> bend   (flexion)
+        //   otherwise                 -> side   (abduction)
+        public static string AxisKind(SceneLoader.LoadedFigure fig, int boneIndex, int axis, Vector3 figureForward)
+        {
+            var bone = fig.Bones[boneIndex];
+            var axisWorld = bone.rotation * (axis == 0 ? Vector3.right : axis == 1 ? Vector3.up : -Vector3.forward);
+
+            var b = fig.BoneJson[boneIndex];
+            var segFigure = DazSpace.Pos(b["end"]) - DazSpace.Pos(b["origin"]);
+            if (segFigure.sqrMagnitude > 1e-8f)
+            {
+                var boneDir = (bone.rotation * (Quaternion.Inverse(fig.OrientUnity[boneIndex]) * segFigure)).normalized;
+                if (Mathf.Abs(Vector3.Dot(axisWorld, boneDir)) > 0.7f) return "twist";
+            }
+
+            var up = fig.Go.transform.up;
+            var right = Vector3.Cross(up, figureForward).normalized;
+            return Mathf.Abs(Vector3.Dot(axisWorld, right)) >= Mathf.Abs(Vector3.Dot(axisWorld, figureForward)) ? "bend" : "side";
         }
 
         static Quaternion Conj(Quaternion q) => new Quaternion(-q.x, -q.y, -q.z, q.w);

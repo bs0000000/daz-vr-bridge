@@ -87,18 +87,27 @@ hard on commit.
   to close the gap, solve again (Ik Iterations, default 4). It stops the moment a solve
   comes back legal, so poses inside the limits behave exactly as before. What you see is
   what Daz will keep. Turn it off for the old free solve.
-- **Show Limits** (default on) turns a handle **red** when a bone it drives is *at* its
-  limit — which, with clamping on, is what "the hand stopped following my controller"
-  actually means — and lists them on the HUD, `l_upperarm y 40° at [-110, 40]`. With
-  clamping off the same display reads `past` instead, flagging what Daz will correct.
+- **Show Limits** (default on) turns the handle **you are holding** red when a bone it
+  drives is *at* its limit — which, with clamping on, is what "the hand stopped following
+  my controller" actually means — and names it on the HUD by the motion it ran out of
+  rather than by axis letter: `l_upperarm twist 90° at [-40, 90]`. Handles you are *not*
+  holding only redden when genuinely past a limit, and axes Daz locks shut (`l_forearm
+  z[0,0]`) are ignored — otherwise every forearm and shin reads as permanently pinned.
 
 **Surfaces** (`BoneHandles` → Surface Snap, Snap Radius; `SceneLoader` → Prop Mesh
-Colliders). Hands and feet do not pass through props. The effector sweeps a sphere from
-where it was to where your controller wants it, stops at the first surface, and slides
-along it — so putting a hand on the couch arm rests it there, and lifting frees it at
-once. Props get a real mesh collider at load for this (non-trigger, so it never collides
-with the grab handles). Her own body has no colliders yet, so a hand can still pass
-through her.
+Colliders). Hands and feet do not pass through props. The sweep is centred on the *middle
+of the hand or foot* — where the handle sits — not on the wrist or ankle, so the palm
+lands on the surface instead of the whole hand hovering a radius above it. Snap Radius is
+that bone's half-thickness, 3 cm by default. The contact point sweeps from where it was
+to where your controller wants it, stops at the first surface and slides along it; lifting
+frees it at once.
+
+A **cyan disc** appears on the surface at the contact point while touching. Resting on
+something and running out of joint range feel identical through a controller, so they are
+shown differently: disc on the surface = touching, red handle = a joint at its limit.
+
+Props get a real mesh collider at load for this (non-trigger, so it never collides with
+the grab handles). Her own body has no colliders yet, so a hand can still pass through her.
 
 Arm chains also set `roll_assist`: the wrist alone can only twist `z[-70, 80]`, so the
 solver rolls the forearm about the elbow-to-wrist axis (which moves no joint, leaving the

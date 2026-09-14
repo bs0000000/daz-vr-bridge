@@ -46,9 +46,17 @@ int boneDepth( const DzNode* bone )
 	return d;
 }
 
+// The effective value, after any ERC controllers: what the bone is actually rotated by.
 double propValue( const DzFloatProperty* p )
 {
 	return p ? p->getValue() : 0.0;
+}
+
+// The undriven value, which is what setValue() writes. Snapshot/restore must use this
+// pair or a controller's contribution gets baked into the base and accumulates.
+double propRaw( const DzFloatProperty* p )
+{
+	return p ? p->getRawValue() : 0.0;
 }
 
 } // namespace
@@ -331,6 +339,10 @@ EulerSnapshot snapshotEulers( DzSkeleton* figure )
 			propValue( bone->getXRotControl() ),
 			propValue( bone->getYRotControl() ),
 			propValue( bone->getZRotControl() ) } );
+		s.rotRaw.insert( bone->getName(), QVector<double>{
+			propRaw( bone->getXRotControl() ),
+			propRaw( bone->getYRotControl() ),
+			propRaw( bone->getZRotControl() ) } );
 	}
 	return s;
 }
@@ -343,7 +355,7 @@ void restoreEulers( const EulerSnapshot &snap )
 		return;
 	}
 	DzUndoStackLock lock;
-	for ( auto it = snap.rotDeg.cbegin(); it != snap.rotDeg.cend(); ++it )
+	for ( auto it = snap.rotRaw.cbegin(); it != snap.rotRaw.cend(); ++it )
 	{
 		DzBone* bone = figure->findBone( it.key() );
 		if ( !bone )
