@@ -51,6 +51,17 @@ namespace DazVrBridge
                                     // this each frame so the contribution cannot accumulate
         Vector3 _bendHint;
 
+        // Two-handed posing. An IK effector knows the handle on its middle joint; that
+        // handle knows the effector it steers for. While both are held, the middle one
+        // stops bending its own bone by FK -- which would fight the solver -- and instead
+        // just says where the elbow or knee should point.
+        public BoneHandle MidHandle;    // set on effectors, by BoneHandles
+        public BoneHandle SteersFor;    // set on the middle joint of an IK chain
+        public bool IsSteering { get; private set; }
+        // The middle joint of this handle IK chain, or -1 when it does not drive one.
+        public int IkMidBone => _ik != null ? _ikMid : -1;
+        public Vector3 SteerPoint { get; private set; }
+
         // The bones this handle drives, for the joint-limit readout.
         public int[] ControlledBones { get; private set; }
         float _overLimit;
@@ -89,6 +100,8 @@ namespace DazVrBridge
         static readonly Color IkColor = new Color(0.3f, 0.8f, 0.85f, 1f);
         static readonly Color HoverColor = new Color(1.0f, 0.85f, 0.2f, 1f);
         static readonly Color GrabbedColor = new Color(0.3f, 1.0f, 0.4f, 1f);
+        // Held, but pointing rather than posing.
+        static readonly Color SteerColor = new Color(0.85f, 0.45f, 1.0f, 1f);
         static readonly Color OverLimitColor = new Color(1.0f, 0.25f, 0.2f, 1f);
 
         public void Init(SceneLoader.LoadedFigure figure, int boneIndex, float radius)
@@ -223,6 +236,17 @@ namespace DazVrBridge
 
         public void UpdateGrab(Transform hand)
         {
+            // Steering, not posing: the other hand is driving this limb and this one is
+            // only pointing the joint. Moving the bone here as well would have the two
+            // hands fighting over the same two rotations.
+            if (SteersFor && SteersFor.IsGrabbed)
+            {
+                if (!IsSteering) { IsSteering = true; _hand?.Pulse(0.4f, 0.03f); Apply(); }
+                SteerPoint = hand.position;
+                return;
+            }
+            if (IsSteering) { IsSteering = false; Apply(); }
+
             if (Shape == Kind.Ring)
             {
                 // Carry the root: position and rotation follow the hand rigidly.
@@ -520,6 +544,8 @@ namespace DazVrBridge
             var shoulder = _ikShoulder >= 0 ? Figure.Bones[_ikShoulder] : null;
             var pole = _profile.PoleDirection(_ik, Figure.Go.transform);
             var clamping = ClampToLimits && Loader != null;
+            // The other hand on the elbow or knee, if it is there.
+            Vector3? steer = MidHandle && MidHandle.IsSteering ? MidHandle.SteerPoint : (Vector3?)null;
 
             if (shoulder)
             {
@@ -530,7 +556,7 @@ namespace DazVrBridge
             var iterations = clamping ? Mathf.Max(1, IkIterations) : 1;
             for (var i = 0; i < iterations; i++)
             {
-                TwoBoneIk.Solve(root, mid, Bone, targetPos, pole, ref _bendHint);
+                TwoBoneIk.Solve(root, mid, Bone, targetPos, pole, ref _bendHint, steer);
                 if (!clamping) break;
 
                 var moved = DazEuler.ClampToLimits(Loader, Figure, _ikRoot)
@@ -644,6 +670,7 @@ namespace DazVrBridge
         {
             _onSurface = false;
             _wasPinned = false;
+            IsSteering = false;
             _hand = null;
             if (_contactDisc) _contactDisc.gameObject.SetActive(false);
             SetState(State.Idle);
@@ -684,7 +711,8 @@ namespace DazVrBridge
         {
             if (!_renderer) return;
             if (_block == null) _block = new MaterialPropertyBlock();
-            var c = Current == State.Grabbed ? GrabbedColor : Current == State.Hover ? HoverColor : _idleColor;
+            var c = IsSteering ? SteerColor
+                : Current == State.Grabbed ? GrabbedColor : Current == State.Hover ? HoverColor : _idleColor;
             // At a joint limit: this bone has run out of range and is why the limb stopped
             // following. (Without clamping it is also past the limit and Daz will correct it.)
             if (_overLimit > 0f) c = Color.Lerp(c, OverLimitColor, 0.35f + 0.5f * Mathf.Clamp01(_overLimit));

@@ -317,6 +317,29 @@ namespace DazVrBridge
                 }
                 Debug.Log($"[DazVrBridge] {fig.Label}: {count} bone handles, {ik} IK effectors ({profile.Rig})");
             }
+
+            PairSteering();
+        }
+
+        // Pair every IK effector with the handle on its own middle joint, so holding the
+        // elbow with the free hand steers the bend instead of fighting the solver for the
+        // same two rotations. A second pass because a chain's middle joint may be built
+        // either side of its effector.
+        void PairSteering()
+        {
+            foreach (var h in All) { h.MidHandle = null; h.SteersFor = null; }
+            foreach (var effector in All)
+            {
+                var mid = effector.IkMidBone;
+                if (mid < 0) continue;
+                foreach (var candidate in All)
+                {
+                    if (candidate.Figure != effector.Figure || candidate.BoneIndex != mid) continue;
+                    effector.MidHandle = candidate;
+                    candidate.SteersFor = effector;
+                    break;
+                }
+            }
         }
     }
 }

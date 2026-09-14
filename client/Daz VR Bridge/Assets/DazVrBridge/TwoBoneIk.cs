@@ -4,6 +4,9 @@
 // joint points, which is the bend plane.
 //
 // Bend plane, in order of preference:
+//   0. a steer point, when a second hand is holding the middle joint: put the elbow
+//      where that hand is. This is the only way to change a limb's bend without
+//      fighting the solver, and without it reaching far from the rest pose is stiff.
 //   1. the chain's current plane, so a limb keeps the bend the user posed
 //   2. the hint carried across frames of a drag, so passing through "straight"
 //      (where the current plane is undefined) does not flip the joint
@@ -16,7 +19,7 @@ namespace DazVrBridge
     public static class TwoBoneIk
     {
         public static void Solve(Transform root, Transform mid, Transform end,
-            Vector3 target, Vector3 poleDir, ref Vector3 bendHint)
+            Vector3 target, Vector3 poleDir, ref Vector3 bendHint, Vector3? bendTowards = null)
         {
             var a = root.position;
             var b = mid.position;
@@ -35,7 +38,9 @@ namespace DazVrBridge
             // straight and pointing at the target.
             lat = Mathf.Clamp(lat, Mathf.Abs(lab - lcb) + 1e-4f, lab + lcb - 1e-4f);
 
-            var bend = Perp(b - a, dir);
+            // A steer point wins outright: it is a hand saying where the joint goes.
+            var bend = bendTowards.HasValue ? Perp(bendTowards.Value - a, dir) : Vector3.zero;
+            if (bend.sqrMagnitude < 1e-8f) bend = Perp(b - a, dir);
             if (bend.sqrMagnitude < 1e-8f) bend = Perp(bendHint, dir);
             if (bend.sqrMagnitude < 1e-8f) bend = Perp(poleDir, dir);
             if (bend.sqrMagnitude < 1e-8f) bend = Perp(Vector3.up, dir);
