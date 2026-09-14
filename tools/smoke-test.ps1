@@ -1,6 +1,5 @@
-# Phase 0 smoke test: talk to the plugin without Unity.
-# Opens a control connection, sends hello, prints welcome, pings, then tries a
-# scene.request to confirm the not_implemented path, and exits.
+# End-to-end protocol smoke test without Unity. It checks hello/welcome,
+# ping/pong, edit state, a complete scene bake, bulk transfer and asset hashes.
 #
 #   .\tools\smoke-test.ps1                       # localhost, default port
 #   .\tools\smoke-test.ps1 -HostName 192.168.1.20 -Code 123456
@@ -10,7 +9,8 @@ param(
     [int]$Port = 41427,
     [string]$Code = "",
     [string]$ManifestOut = (Join-Path $PSScriptRoot "last-manifest.json"),
-    [switch]$SaveAssets   # also write each asset to tools/assets/<hex>.bin
+    [switch]$SaveAssets,  # also write each asset to tools/assets/<hex>.bin
+    [switch]$TestUndo     # also undo and immediately redo the top of Daz's undo stack
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,7 +18,7 @@ $ErrorActionPreference = "Stop"
 function Send-Frame($stream, [hashtable]$header) {
     $json = [System.Text.Encoding]::UTF8.GetBytes(($header | ConvertTo-Json -Compress))
     $frameLen = 4 + $json.Length
-    $buf = New-Object byte[] (8 + $frameLen)
+    $buf = New-Object byte[] (4 + $frameLen)
     [BitConverter]::GetBytes([uint32]$frameLen).CopyTo($buf, 0)
     [BitConverter]::GetBytes([uint32]$json.Length).CopyTo($buf, 4)
     $json.CopyTo($buf, 8)
@@ -50,6 +50,19 @@ function Read-Frame($stream) {
     return $header
 }
 
+# Broadcasts arrive whenever Daz feels like it -- an undo alone produces edit.state,
+# pose.state and node.state -- so anything waiting on a specific reply has to step
+# over them instead of mistaking the next frame for its answer.
+$script:Unsolicited = @("edit.state", "pose.state", "node.state", "scene.changed", "progress")
+
+function Read-Reply($stream) {
+    while ($true) {
+        $f = Read-Frame $stream
+        if ($script:Unsolicited -notcontains $f.t) { return $f }
+        Write-Host "   (broadcast: $($f.t))"
+    }
+}
+
 function Get-Sha1Hex([byte[]]$bytes) {
     $sha = [System.Security.Cryptography.SHA1]::Create()
     return "sha1:" + (([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant())
@@ -71,12 +84,42 @@ Write-Host "<- $($welcome | Select-Object -ExcludeProperty payload | ConvertTo-J
 if ($welcome.t -ne "welcome") { Write-Host "handshake refused"; exit 1 }
 
 Send-Frame $stream @{ t = "ping"; seq = (++$seq) }
-$pong = Read-Frame $stream
+$pong = Read-Reply $stream
 Write-Host "<- $($pong | Select-Object -ExcludeProperty payload | ConvertTo-Json -Compress)"
+
+# --- undo/redo. The no-op direction is always safe to try: with an empty redo
+# stack the plugin must answer ok:false rather than an error, and the reply carries
+# the same edit fields welcome did. -TestUndo also pops the real top of the stack
+# and pushes it straight back.
+if ($null -eq $welcome.edit) {
+    Write-Host "FAIL: welcome carried no edit state"
+    exit 1
+}
+Write-Host ("edit state: can_undo={0} ('{1}')  can_redo={2} ('{3}')" -f $welcome.edit.can_undo, $welcome.edit.undo, $welcome.edit.can_redo, $welcome.edit.redo)
+
+function Invoke-Edit($stream, [string]$action) {
+    Send-Frame $stream @{ t = "edit.$action"; seq = (++$script:seq) }
+    $r = Read-Reply $stream
+    if ($r.t -ne "edit.result") { Write-Host "<- $($r | ConvertTo-Json -Compress)"; Write-Host "FAIL: expected edit.result"; exit 1 }
+    Write-Host ("<- edit.result {0} ok={1} '{2}'  now can_undo={3} can_redo={4}" -f $r.action, $r.ok, $r.caption, $r.can_undo, $r.can_redo)
+    return $r
+}
+
+if (-not $welcome.edit.can_redo) {
+    $r = Invoke-Edit $stream "redo"
+    if ($r.ok) { Write-Host "FAIL: redo reported success with an empty redo stack"; exit 1 }
+}
+
+if ($TestUndo -and $welcome.edit.can_undo) {
+    $u = Invoke-Edit $stream "undo"
+    if (-not $u.ok) { Write-Host "FAIL: undo refused while can_undo was true"; exit 1 }
+    $r = Invoke-Edit $stream "redo"
+    if (-not $r.ok) { Write-Host "FAIL: could not redo what we just undid -- the scene is one step behind"; exit 1 }
+}
 
 Send-Frame $stream @{ t = "scene.request"; seq = (++$seq); textures = "opacity"; meshes = $true }
 $stream.ReadTimeout = 120000
-$reply = Read-Frame $stream
+$reply = Read-Reply $stream
 
 if ($reply.t -ne "scene.manifest") {
     Write-Host "<- $($reply | ConvertTo-Json -Compress)"
@@ -152,7 +195,7 @@ $client.Close()
 
 if ($pong.t -eq "pong" -and $assetsOk) {
     Write-Host ""
-    Write-Host "PASS: hello/welcome, ping/pong, scene.manifest, assets verified"
+    Write-Host "PASS: hello/welcome, ping/pong, edit state, scene.manifest, assets verified"
     exit 0
 }
 Write-Host "FAIL"

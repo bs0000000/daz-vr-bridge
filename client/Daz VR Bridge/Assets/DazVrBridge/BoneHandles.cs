@@ -267,6 +267,15 @@ namespace DazVrBridge
             if (loader) loader.SceneBuilt -= Rebuild;
         }
 
+        public void ApplySettings()
+        {
+            foreach (var h in All)
+            {
+                h.ClampToLimits = clampToLimits; h.SurfaceSnap = surfaceSnap;
+                h.RollAssist = rollAssist; h.IkIterations = ikIterations;
+            }
+        }
+
         public void Rebuild()
         {
             All.Clear(); // old handles died with the old DazScene

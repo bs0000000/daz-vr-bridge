@@ -18,6 +18,7 @@
 class DzSkeleton;
 class QTcpServer;
 class QTcpSocket;
+class QTimer;
 
 namespace DazVrBridge {
 
@@ -71,8 +72,10 @@ private:
 	void	handlePoseCommit( Connection &c, const Frame &f );
 	void	handleSelfTestBegin( Connection &c, const Frame &f );
 	void	handleNodeTransform( Connection &c, const Frame &f );
+	void	handleEdit( Connection &c, const Frame &f );
 	void	onFigureChanged( DzSkeleton* figure );
 	void	onNodeChanged( DzNode* node );
+	void	onNodeListChanged();
 
 	void	send( QTcpSocket* socket, const QJsonObject &header, const QByteArray &payload = QByteArray() );
 	void	sendError( Connection &c, const Frame &ref, const QString &code, const QString &msg );
@@ -80,6 +83,9 @@ private:
 
 	void	onSceneChanged( const QString &reason );
 	QJsonObject	sceneSummary() const;
+	// Undo/redo availability and captions, so VR can label its buttons.
+	QJsonObject	undoSummary() const;
+	void	broadcastEditState();
 	bool	sessionExists( const QString &session ) const;
 	void	regeneratePairingCode();
 	void	log( const QString &line );
@@ -88,6 +94,11 @@ private:
 	QHash<QTcpSocket*, Connection>	m_connections;
 	QHash<QString, BakedAsset>		m_assets;	// last bake, by content hash
 	PoseWatcher*					m_poseWatcher = nullptr;
+	QTimer*							m_nodeListTimer = nullptr;	// coalesces nodeListChanged storms
+	QTimer*							m_editStateTimer = nullptr;	// coalesces the four undo-stack signals
+	bool							m_sceneLoading = false;
+	bool							m_sceneClearing = false;
+	bool							m_sceneBusy = false;		// between load/clear start and finish
 	EulerSnapshot					m_selfTest;	// pending self-test, empty figureId when none
 	QString							m_pairingCode;
 	bool							m_pairingRequired = true;

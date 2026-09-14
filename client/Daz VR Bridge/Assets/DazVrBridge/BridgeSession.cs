@@ -43,12 +43,20 @@ namespace DazVrBridge
             Bulk = new BridgeClient("bulk");
             Bulk.StateChanged += s => BulkState?.Invoke(s);
             Bulk.FrameReceived += f => BulkFrame?.Invoke(f);
+
+            // Undo/redo rides along with the connection rather than being wired into the
+            // scene, so an existing scene gets it without being rebuilt. Added in Awake so
+            // it is subscribed before the first Pump() delivers the welcome. Drop an
+            // EditSync in the scene yourself if you want to change the bindings.
+            if (!FindAnyObjectByType<EditSync>()) gameObject.AddComponent<EditSync>();
+            if (!FindAnyObjectByType<VrMenu>()) gameObject.AddComponent<VrMenu>();
         }
 
         void Start()
         {
             ConnectControl();
         }
+
 
         void OnDestroy()
         {

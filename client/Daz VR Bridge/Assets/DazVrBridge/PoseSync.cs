@@ -42,6 +42,9 @@ namespace DazVrBridge
         // produces a fresh pose.state anyway.
         readonly HashSet<string> _grabbed = new HashSet<string>();
 
+        // True while any figure is being posed, so a scene rebuild can wait its turn.
+        public bool AnyGrabbed => _grabbed.Count > 0;
+
         public void SetGrabbed(string figureId, bool on)
         {
             if (on) _grabbed.Add(figureId); else _grabbed.Remove(figureId);

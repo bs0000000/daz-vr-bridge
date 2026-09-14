@@ -72,7 +72,8 @@ set_target_properties( ${DZ_PLUGIN_TGT_NAME}
 # The SDK only routes its own samples into Daz Studio's plugins folder
 # (that logic lives in samples/CMakeLists.txt), so do it for ourselves here.
 if( DAZ_STUDIO_EXE_DIR )
-	set( DZ_PLUGIN_OUT_DIR "${DAZ_STUDIO_EXE_DIR}/plugins" )
+	set( DAZVR_OUTPUT_DIR "${DAZ_STUDIO_EXE_DIR}/plugins" CACHE PATH "Bridge DLL output directory (use a staging directory while Daz is running)" )
+	set( DZ_PLUGIN_OUT_DIR "${DAZVR_OUTPUT_DIR}" )
 	set_target_properties( ${DZ_PLUGIN_TGT_NAME}
 		PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY "${DZ_PLUGIN_OUT_DIR}"

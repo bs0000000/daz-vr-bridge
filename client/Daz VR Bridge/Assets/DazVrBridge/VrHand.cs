@@ -36,7 +36,14 @@ namespace DazVrBridge
         public string DeviceName { get; private set; } = "";
         bool _hasPose;
         // The other button (grip when trigger grabs bones): held to grab the world.
-        public bool WorldGrab => IsTracked && _world.IsPressed();
+        public bool WorldGrab => !UiBlocked && IsTracked && _world.IsPressed();
+        public static float HapticGain { get; set; } = 1f;
+        public static bool UiBlocked { get; set; }
+        public static bool AnyHolding { get; private set; }
+        static int _heldCount;
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetInteraction() { HapticGain = 1f; UiBlocked = false; _heldCount = 0; AnyHolding = false; }
+        public bool TriggerPressed => IsTracked && _monTrigger.WasPressedThisFrame();
         public bool HoldingSomething => _grabbed != null;
 
         InputAction _position, _rotation, _grab, _world, _isTracked, _trackingState;
@@ -44,7 +51,10 @@ namespace DazVrBridge
         GameObject _vis;
         Renderer _visRenderer;
         Color _visColor;
+        readonly MaterialPropertyBlock _visBlock = new MaterialPropertyBlock();
 
+        SceneLoader _loader;
+        void Start() { _loader = FindAnyObjectByType<SceneLoader>(); }
         IGrabbable _hover;
         IGrabbable _grabbed;
 
@@ -113,7 +123,7 @@ namespace DazVrBridge
         {
             if (!_visRenderer) return;
             var c = _visColor; c.a = a;
-            var block = new MaterialPropertyBlock();
+            var block = _visBlock;
             block.SetColor("_BaseColor", c);
             block.SetColor("_Color", c);
             _visRenderer.SetPropertyBlock(block);
@@ -126,6 +136,8 @@ namespace DazVrBridge
 
         void OnDisable()
         {
+            if (_grabbed != null) Release();
+            ClearHover();
             foreach (var a in AllActions()) a.Disable();
         }
 
@@ -135,8 +147,14 @@ namespace DazVrBridge
         {
             var device = _position.activeControl?.device;
             if (device is UnityEngine.InputSystem.XR.XRControllerWithRumble rumble)
-                rumble.SendImpulse(Mathf.Clamp01(amplitude), duration);
+                rumble.SendImpulse(Mathf.Clamp01(amplitude * HapticGain), duration);
         }
+
+        // Face buttons as a press, not a hold, for whoever owns that action (undo/redo
+        // today, the menu next). Asked of the action directly rather than edge-detected
+        // in Update, so the answer does not depend on script execution order.
+        public bool PrimaryPressed => IsTracked && _monPrimary.WasPressedThisFrame();
+        public bool SecondaryPressed => IsTracked && _monSecondary.WasPressedThisFrame();
 
         // For the HUD: which of the four buttons this controller currently reports pressed.
         public string ButtonMonitor()
@@ -182,7 +200,7 @@ namespace DazVrBridge
                 return;
             }
 
-            if (!IsTracked || WorldGrab) { ClearHover(); return; } // world grab has priority
+            if (UiBlocked || (_loader && _loader.Busy) || !IsTracked || WorldGrab) { ClearHover(); return; } // world grab has priority
             UpdateHover();
             if (_hover != null && _grab.WasPressedThisFrame()) Grab(_hover);
         }
@@ -222,6 +240,7 @@ namespace DazVrBridge
         void Grab(IGrabbable g)
         {
             _grabbed = g;
+            _heldCount++; AnyHolding = _heldCount > 0;
             _hover = null;
             g.BeginGrab(transform);
         }
@@ -230,6 +249,7 @@ namespace DazVrBridge
         {
             var g = _grabbed;
             _grabbed = null;
+            _heldCount = Mathf.Max(0, _heldCount - 1); AnyHolding = _heldCount > 0;
             g.EndGrab(transform);
         }
 

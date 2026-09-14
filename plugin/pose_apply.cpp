@@ -420,7 +420,7 @@ PoseWatcher::PoseWatcher( QObject* parent ) :
 	connect( dzScene, &DzScene::sceneLoaded, this, &PoseWatcher::rescan );
 	connect( dzScene, &DzScene::sceneCleared, this, &PoseWatcher::rescan );
 	connect( dzScene, &DzScene::skeletonListChanged, this, &PoseWatcher::rescan );
-	connect( dzScene, &DzScene::nodeListChanged, this, &PoseWatcher::rescan );
+	// Server coalesces nodeListChanged storms and calls rescan() once after they settle.
 
 	// Render size/aspect is global; every camera not using local dimensions changes with it.
 	if ( DzRenderMgr* mgr = dzApp->getRenderMgr() )

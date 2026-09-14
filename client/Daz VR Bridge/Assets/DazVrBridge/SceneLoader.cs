@@ -37,6 +37,7 @@ namespace DazVrBridge
         readonly Dictionary<string, byte[]> _assets = new Dictionary<string, byte[]>();
         readonly HashSet<string> _pending = new HashSet<string>();
         GameObject _root;
+        readonly List<UnityEngine.Object> _ownedResources = new List<UnityEngine.Object>();
         bool _requested;
 
         // Loaded figures by Daz node id, for PoseSync and (later) the posing UX.
@@ -81,22 +82,48 @@ namespace DazVrBridge
         [Tooltip("Give props a mesh collider so hands and feet can rest on their surfaces. Costs a little load time per prop.")]
         public bool propMeshColliders = true;
 
+        [Tooltip("Consulted before rebuilding after a desk-side node change, so a rebuild never lands mid-grab.")]
+        public PoseSync poseSync;
+        bool _nodesDirty;
+        bool _buildReady;
+        long _requestSeq = -1;
+        float _retryAfter;
+
         public Transform Root => _root ? _root.transform : null;
         public event System.Action SceneBuilt;
 
         void Start()
         {
             if (!session) session = FindAnyObjectByType<BridgeSession>();
+            if (!poseSync) poseSync = FindAnyObjectByType<PoseSync>();
             session.ControlFrame += OnControlFrame;
             session.BulkFrame += OnBulkFrame;
             session.ControlState += OnControlState;
             session.BulkState += OnBulkState;
         }
 
+        void OnDestroy()
+        {
+            if (session)
+            {
+                session.ControlFrame -= OnControlFrame; session.BulkFrame -= OnBulkFrame;
+                session.ControlState -= OnControlState; session.BulkState -= OnBulkState;
+            }
+            ClearScene();
+        }
+
+        void ClearScene()
+        {
+            if (_root) { _root.SetActive(false); Destroy(_root); }
+            foreach (var resource in _ownedResources) if (resource) Destroy(resource);
+            _ownedResources.Clear();
+        }
+
         void OnControlState(BridgeClient.State s)
         {
             if (s == BridgeClient.State.Connected && !_requested) RequestScene();
-            if (s != BridgeClient.State.Connected) _requested = false;
+            if (s != BridgeClient.State.Connected)
+            { _requested = false; Busy = false; _buildReady = false; _pending.Clear(); _requestSeq = -1; }
         }
 
         void OnBulkState(BridgeClient.State s)
@@ -106,10 +133,12 @@ namespace DazVrBridge
 
         public void RequestScene()
         {
+            if (!session.ControlReady || Busy || VrHand.AnyHolding) { _nodesDirty = true; return; }
+            _nodesDirty = false;
             _requested = true;
             Busy = true;
             Status = "requesting scene…";
-            session.SendControl(new JObject
+            _requestSeq = session.SendControl(new JObject
             {
                 ["t"] = "scene.request",
                 ["textures"] = textures,
@@ -122,14 +151,47 @@ namespace DazVrBridge
         {
             switch (f.Type)
             {
+                case "error":
+                    if (f.Header.Value<long?>("ref_seq") == _requestSeq)
+                    { Busy = false; Status = f.Header.Value<string>("msg");
+                      _nodesDirty = f.Header.Value<string>("code") == "busy"; _retryAfter = Time.unscaledTime + 1f; }
+                    break;
                 case "scene.manifest":
+                    if (f.Header.Value<long?>("ref_seq") != _requestSeq || !Busy) break;
                     OnManifest((JObject)f.Header["manifest"]);
                     break;
                 case "scene.changed":
-                    var reason = f.Header.Value<string>("reason");
-                    if (reason == "loaded" || reason == "cleared") RequestScene();
+                    OnSceneChanged(f.Header.Value<string>("reason"));
                     break;
             }
+        }
+
+        // A prop added or deleted at the desk arrives as reason "nodes". Rebuilding
+        // discards whatever is posed but uncommitted in VR, so it waits until no hand is
+        // holding anything -- which is also when the user is most likely looking at the
+        // desk. Meshes that did not change come straight from the asset cache, so the
+        // rebuild is mostly manifest.
+        void OnSceneChanged(string reason)
+        {
+            switch (reason)
+            {
+                case "loaded":
+                case "cleared":
+                    _nodesDirty = true;
+                    break;
+                case "nodes":
+                    _nodesDirty = true;
+                    break;
+            }
+        }
+
+        void Update()
+        {
+            if (_buildReady && !VrHand.AnyHolding) { _buildReady = false; Build(); }
+            if (!_nodesDirty || Busy || !session.ControlReady || Time.unscaledTime < _retryAfter || VrHand.AnyHolding) return;
+            if (poseSync && poseSync.AnyGrabbed) return;
+            _nodesDirty = false;
+            RequestScene();
         }
 
         void OnManifest(JObject manifest)
@@ -149,7 +211,7 @@ namespace DazVrBridge
             Status = $"manifest: {nodes} nodes, {_assets.Count} cached, {_pending.Count} to fetch";
             Debug.Log($"[DazVrBridge] {Status}");
 
-            if (_pending.Count == 0) Build();
+            if (_pending.Count == 0) _buildReady = true;
             else RequestMissingAssets();
         }
 
@@ -170,18 +232,20 @@ namespace DazVrBridge
         {
             if (f.Type == "error")
             {
+                Busy = false; _buildReady = false; Status = "Asset transfer failed; refresh to retry";
                 Debug.LogWarning($"[DazVrBridge] bulk: {f.Header.Value<string>("code")}: {f.Header.Value<string>("msg")}");
                 return;
             }
             if (f.Type != "asset.data") return;
 
             var hash = f.Header.Value<string>("hash");
-            if (!AssetCache.Put(hash, f.Payload)) return;
+            if (!Busy || !_pending.Contains(hash)) return;
+            if (!AssetCache.Put(hash, f.Payload)) { Busy = false; Status = "Asset verification failed; refresh to retry"; return; }
             _assets[hash] = f.Payload;
             _pending.Remove(hash);
             Status = $"fetching… {_pending.Count} left";
 
-            if (_pending.Count == 0 && _manifest != null) Build();
+            if (_pending.Count == 0 && _manifest != null) _buildReady = true;
         }
 
         // ------------------------------------------------------------------
@@ -189,7 +253,7 @@ namespace DazVrBridge
 
         void Build()
         {
-            if (_root) Destroy(_root);
+            ClearScene();
             Figures.Clear();
             Nodes.Clear();
 
@@ -516,9 +580,10 @@ namespace DazVrBridge
             }
         }
 
-        static Mesh BuildUnityMesh(DzmMesh src, string name)
+        Mesh BuildUnityMesh(DzmMesh src, string name)
         {
             var mesh = new Mesh { name = name };
+            _ownedResources.Add(mesh);
             if (src.VertexCount > 65000) mesh.indexFormat = IndexFormat.UInt32;
 
             var verts = new Vector3[src.VertexCount];
@@ -598,6 +663,7 @@ namespace DazVrBridge
             for (var i = 0; i < groups.Count; i++)
             {
                 var m = clayMaterial ? new Material(clayMaterial) : new Material(DefaultShader());
+                _ownedResources.Add(m);
                 var color = new Color(0.7f, 0.7f, 0.7f);
                 var matIndex = groups[i].Material;
                 if (defs != null && matIndex < defs.Count)

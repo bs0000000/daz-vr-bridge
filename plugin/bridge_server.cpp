@@ -8,11 +8,13 @@
 #include <QStringBuilder>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTimer>
 #include <QUuid>
 
 #include "dzapp.h"
 #include "dzscene.h"
 #include "dzskeleton.h"
+#include "dzundostack.h"
 
 #include "scene_bake.h"
 #include "version.h"
@@ -63,9 +65,47 @@ Server::Server( QObject* parent ) :
 	connect( m_server, &QTcpServer::newConnection, this, &Server::onNewConnection );
 
 	// Scene-level events the client wants to hear about even in Phase 0.
-	connect( dzScene, &DzScene::sceneLoaded, this, [this]() { onSceneChanged( "loaded" ); } );
-	connect( dzScene, &DzScene::sceneCleared, this, [this]() { onSceneChanged( "cleared" ); } );
+	connect( dzScene, &DzScene::sceneLoadStarting, this, [this]() { m_sceneLoading = true; m_sceneBusy = true; if (m_nodeListTimer) m_nodeListTimer->stop(); } );
+	connect( dzScene, &DzScene::sceneClearStarting, this, [this]() { m_sceneClearing = true; m_sceneBusy = true; if (m_nodeListTimer) m_nodeListTimer->stop(); } );
+	connect( dzScene, &DzScene::sceneLoaded, this, [this]()
+	{
+		m_sceneLoading = false;
+		m_sceneBusy = m_sceneClearing;
+		if ( !m_sceneBusy ) onSceneChanged( "loaded" );
+	} );
+	connect( dzScene, &DzScene::sceneCleared, this, [this]()
+	{
+		m_sceneClearing = false;
+		m_sceneBusy = m_sceneLoading;
+		if ( !m_sceneBusy ) onSceneChanged( "cleared" );
+	} );
 	connect( dzScene, &DzScene::sceneFilenameChanged, this, [this]( const QString & ) { onSceneChanged( "renamed" ); } );
+
+	// Props and figures added or deleted at the desk. nodeListChanged fires once per
+	// node, so a .duf drop is a storm of them; coalesce into one scene.changed and one
+	// watcher rescan, and stay quiet during a load (sceneLoaded already covers it).
+	m_nodeListTimer = new QTimer( this );
+	m_nodeListTimer->setSingleShot( true );
+	m_nodeListTimer->setInterval( 400 );
+	connect( m_nodeListTimer, &QTimer::timeout, this, [this]()
+	{
+		if ( m_sceneBusy ) return;
+		m_poseWatcher->rescan();
+		onSceneChanged( "nodes" );
+	} );
+	connect( dzScene, &DzScene::nodeListChanged, this, &Server::onNodeListChanged );
+
+	// Undo availability, so a VR button can show what it would undo (or grey out).
+	// The four signals fire together for one action; coalesce them into one broadcast.
+	m_editStateTimer = new QTimer( this );
+	m_editStateTimer->setSingleShot( true );
+	m_editStateTimer->setInterval( 50 );
+	connect( m_editStateTimer, &QTimer::timeout, this, &Server::broadcastEditState );
+	const auto editStateDirty = [this]() { if ( !m_connections.isEmpty() ) m_editStateTimer->start(); };
+	connect( dzUndoStack, &DzUndoStack::undoAvailable, this, editStateDirty );
+	connect( dzUndoStack, &DzUndoStack::redoAvailable, this, editStateDirty );
+	connect( dzUndoStack, &DzUndoStack::undoCaptionChanged, this, editStateDirty );
+	connect( dzUndoStack, &DzUndoStack::redoCaptionChanged, this, editStateDirty );
 
 	// Desk-side pose edits -> pose.state to every control connection.
 	m_poseWatcher = new PoseWatcher( this );
@@ -266,6 +306,12 @@ void Server::handleFrame( Connection &c, const Frame &f )
 		return;
 	}
 
+	if ( type == "edit.undo" || type == "edit.redo" )
+	{
+		handleEdit( c, f );
+		return;
+	}
+
 	if ( type == "select" )
 	{
 		sendError( c, f, "not_implemented", "select arrives with the posing UX" );
@@ -345,6 +391,10 @@ void Server::handleHello( Connection &c, const Frame &f )
 	w[ "daz_version" ] = DzApp::getVersionString();
 	w[ "plugin_version" ] = pluginVersionString();
 	w[ "scene" ] = sceneSummary();
+	if ( role == "control" )
+	{
+		w[ "edit" ] = undoSummary();
+	}
 	send( c.socket, w );
 
 	log( QString( "%1 joined as %2 (%3, session %4)" )
@@ -359,6 +409,11 @@ void Server::handleSceneRequest( Connection &c, const Frame &f )
 		return;
 	}
 
+	if ( m_sceneBusy || !m_selfTest.figureId.isEmpty() || dzUndoStack->isInUndoRedo() )
+	{
+		sendError( c, f, "busy", "Daz is busy; retry the scene request shortly" );
+		return;
+	}
 	const BakeOptions opts = bakeOptionsFromJson( f.header );
 	log( QString( "Baking scene (textures=%1, influences=%2, meshes=%3)" )
 		.arg( opts.textures ).arg( opts.influences ).arg( opts.meshes ? "yes" : "no" ) );
@@ -538,6 +593,81 @@ void Server::handleNodeTransform( Connection &c, const Frame &f )
 		log( QString( "Moved node (\"%1\")" ).arg( label ) );
 	}
 	// The watcher broadcasts node.state ~100 ms later as confirmation.
+}
+
+// Undo and redo are Daz's own stack, not a VR-only one: the step this pops is the
+// same step Ctrl+Z at the desk would pop, which is the only way the two sides stay
+// in agreement about what happened. The caption travels back so VR can say what it
+// just undid without the user reading a HUD.
+//
+// The rollback moves transforms, which PoseWatcher sees and broadcasts as pose.state
+// / node.state a moment later; that is the client's real confirmation. Nothing here
+// suppresses the watcher, on purpose.
+void Server::handleEdit( Connection &c, const Frame &f )
+{
+	if ( c.role != "control" )
+	{
+		sendError( c, f, "wrong_connection", f.type() % " belongs on the control connection" );
+		return;
+	}
+
+	const bool redo = f.type() == "edit.redo";
+
+	// Re-entering the stack from inside its own undo would corrupt it.
+	if ( m_sceneBusy || !m_selfTest.figureId.isEmpty() || dzUndoStack->isInUndoRedo() )
+	{
+		sendError( c, f, "busy", "Daz is busy loading, testing, or undoing" );
+		return;
+	}
+
+	const QString caption = redo ? dzUndoStack->getRedoCaption() : dzUndoStack->getUndoCaption();
+	const bool available = redo ? dzUndoStack->canRedo() : dzUndoStack->canUndo();
+	const bool ok = available && ( redo ? dzUndoStack->redo() : dzUndoStack->undo() );
+
+	QJsonObject h = undoSummary();
+	h[ "t" ] = "edit.result";
+	h[ "seq" ] = m_seq++;
+	h[ "ref_seq" ] = f.seq();
+	h[ "action" ] = redo ? "redo" : "undo";
+	h[ "ok" ] = ok;
+	h[ "caption" ] = caption;	// what was undone, not what is next
+	send( c.socket, h );
+
+	if ( ok )
+	{
+		log( QString( "%1 from VR: %2" ).arg( redo ? "Redo" : "Undo", caption.isEmpty() ? QString( "(unnamed step)" ) : caption ) );
+	}
+}
+
+QJsonObject Server::undoSummary() const
+{
+	QJsonObject e;
+	e[ "can_undo" ] = dzUndoStack->canUndo();
+	e[ "can_redo" ] = dzUndoStack->canRedo();
+	e[ "undo" ] = dzUndoStack->getUndoCaption();
+	e[ "redo" ] = dzUndoStack->getRedoCaption();
+	return e;
+}
+
+void Server::broadcastEditState()
+{
+	if ( m_connections.isEmpty() )
+	{
+		return;
+	}
+	QJsonObject h = undoSummary();
+	h[ "t" ] = "edit.state";
+	h[ "seq" ] = m_seq++;
+	broadcastControl( h );
+}
+
+void Server::onNodeListChanged()
+{
+	if ( m_sceneBusy || m_connections.isEmpty() )
+	{
+		return;
+	}
+	m_nodeListTimer->start();	// restarts, so a storm collapses to one shot
 }
 
 void Server::onNodeChanged( DzNode* node )

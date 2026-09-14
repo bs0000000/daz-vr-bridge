@@ -67,6 +67,7 @@ namespace DazVrBridge
             camGo.transform.SetParent(transform, false);
             _cam = camGo.AddComponent<Camera>();
             _cam.targetTexture = _rt;
+            _cam.cullingMask &= ~(1 << 5); // session menu belongs only in the headset
             // URP has no stereoTargetEye; XR rendering is switched off per camera on its
             // URP data, so this renders one flat image while OpenXR drives the main camera.
             var urp = _cam.GetUniversalAdditionalCameraData();
@@ -133,6 +134,7 @@ namespace DazVrBridge
             _rt.Release();
             _rt = new RenderTexture(pipPixels, Mathf.Max(1, Mathf.RoundToInt(pipPixels / Aspect)), 24) { name = "pip" };
             _cam.targetTexture = _rt;
+            _cam.cullingMask &= ~(1 << 5); // session menu belongs only in the headset
             if (_pip)
             {
                 _pip.localScale = new Vector3(pipWidth, pipWidth / Aspect, 1f);
