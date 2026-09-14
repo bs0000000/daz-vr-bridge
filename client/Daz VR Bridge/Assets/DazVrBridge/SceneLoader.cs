@@ -747,7 +747,14 @@ namespace DazVrBridge
                     {
                         m.EnableKeyword("_ALPHATEST_ON");
                         if (m.HasProperty("_AlphaClip")) m.SetFloat("_AlphaClip", 1f);
-                        if (m.HasProperty("_Cutoff")) m.SetFloat("_Cutoff", 0.35f);
+                        // The plugin builds the mip chain to hold coverage at exactly this
+                        // value, so it comes from there rather than being guessed twice.
+                        if (m.HasProperty("_Cutoff")) m.SetFloat("_Cutoff", def.Value<float?>("cutoff") ?? 0.35f);
+                        // Turns the binary test into per-sample coverage, which is what
+                        // stops eyebrow fibres from sparkling as the head moves. Inert
+                        // while MSAA is off, so it costs nothing until MSAA is turned on.
+                        if (m.HasProperty("_AlphaToMask")) m.SetFloat("_AlphaToMask", 1f);
+                        m.EnableKeyword("_ALPHATOMASK_ON");
                         m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
                     }
                     Want(def.Value<string>("base_tex"), m);

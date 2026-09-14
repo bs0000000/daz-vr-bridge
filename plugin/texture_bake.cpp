@@ -245,6 +245,59 @@ void writeAlphaBlock( QByteArray &out, const QRgb block[ 16 ] )
 	}
 }
 
+// The fraction of an image that would survive the alpha test at this scale.
+float coverage( const QImage &image, float scale, int cutoff )
+{
+	const qint64 total = qint64( image.width() ) * image.height();
+	if ( total <= 0 )
+	{
+		return 0.0f;
+	}
+	qint64 passed = 0;
+	for ( int y = 0; y < image.height(); ++y )
+	{
+		const QRgb* row = reinterpret_cast<const QRgb*>( image.constScanLine( y ) );
+		for ( int x = 0; x < image.width(); ++x )
+		{
+			if ( qAlpha( row[ x ] ) * scale >= cutoff ) ++passed;
+		}
+	}
+	return float( double( passed ) / double( total ) );
+}
+
+// Averaging a cutout's edges as the chain goes down drags alpha toward the middle,
+// so fewer and fewer texels clear the cutoff: eyebrows and hair thin out with
+// distance, and shimmer as the sampler crosses between levels. Scaling each level's
+// alpha until the same proportion passes as at full resolution is the standard cure,
+// and costs nothing at runtime because it is baked in here.
+void matchCoverage( QImage &level, float target, int cutoff )
+{
+	if ( target <= 0.0f || target >= 1.0f )
+	{
+		return;	// fully solid or fully empty: nothing to hold
+	}
+	float low = 0.0f, high = 4.0f;
+	for ( int i = 0; i < 12; ++i )
+	{
+		const float mid = ( low + high ) * 0.5f;
+		if ( coverage( level, mid, cutoff ) < target ) low = mid; else high = mid;
+	}
+	const float scale = ( low + high ) * 0.5f;
+	if ( qAbs( scale - 1.0f ) < 0.01f )
+	{
+		return;
+	}
+	for ( int y = 0; y < level.height(); ++y )
+	{
+		QRgb* row = reinterpret_cast<QRgb*>( level.scanLine( y ) );
+		for ( int x = 0; x < level.width(); ++x )
+		{
+			const int a = qBound( 0, int( qAlpha( row[ x ] ) * scale + 0.5f ), 255 );
+			row[ x ] = qRgba( qRed( row[ x ] ), qGreen( row[ x ] ), qBlue( row[ x ] ), a );
+		}
+	}
+}
+
 void compressLevel( const QImage &image, bool alpha, QByteArray &out )
 {
 	const int width = image.width();
@@ -408,6 +461,9 @@ QByteArray produceTexture( const TextureRef &ref, QString* errorOut )
 	writeU32( out, quint32( ref.mips ) );
 	Q_ASSERT( out.size() == kHeaderBytes );
 
+	const int cutoff = int( kAlphaCutoff * 255.0f );
+	const float baseCoverage = ref.alpha ? coverage( image, 1.0f, cutoff ) : 0.0f;
+
 	QImage level = image;
 	for ( int mip = 0; mip < ref.mips; ++mip )
 	{
@@ -416,6 +472,10 @@ QByteArray produceTexture( const TextureRef &ref, QString* errorOut )
 		if ( level.width() != w || level.height() != h )
 		{
 			level = image.scaled( w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation );
+			if ( ref.alpha )
+			{
+				matchCoverage( level, baseCoverage, cutoff );
+			}
 		}
 		compressLevel( level, ref.alpha, out );
 	}

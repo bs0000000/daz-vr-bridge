@@ -21,6 +21,11 @@
 
 namespace DazVrBridge {
 
+// Where an alpha-tested surface decides between solid and hole. Shipped to the
+// client in the material so both ends test at the same place; the mip chain is
+// built to hold its coverage at exactly this value.
+const float kAlphaCutoff = 0.35f;
+
 // One texture per material rather than one per map. A Daz opacity map is a
 // greyscale JPEG with no alpha channel of its own, so shipping it as-is would send
 // a fully opaque BC3 and clip nothing; its luminance has to become the alpha of the

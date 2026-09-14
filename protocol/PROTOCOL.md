@@ -136,7 +136,9 @@ per vertex: u16[influences] bone_index, f32[influences] weight
 opacity_map: path|null, color_map: path|null, base_tex: hash|null, cutout: true? } ] }`.
 The map paths are on the Daz machine and are there for diagnostics only; `base_tex` is
 the asset hash the client actually asks for. `cutout` marks a surface whose opacity map
-makes it alpha-tested.
+makes it alpha-tested, and `cutoff` is where that test sits — the mip chain is built to
+hold the same alpha coverage at exactly that value, so both ends must use it rather
+than each picking one.
 
 **`texture` assets — binary, `DZT1`.** `"DZT1"`, `u32 format` (1 = BC1, 3 = BC3),
 `u32 width`, `u32 height`, `u32 mips`, then every mip level largest first, back to

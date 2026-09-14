@@ -111,7 +111,7 @@ QJsonObject bakeMaterials( const DzShape* shape, const BakeOptions &opts, QList<
 		if ( !opacity.isEmpty() ) m[ "opacity_map" ] = opacity;
 		if ( !color.isEmpty() ) m[ "color_map" ] = color;
 		m[ "base_tex" ] = reference( color, opacity );
-		if ( !opacity.isEmpty() ) m[ "cutout" ] = true;
+		if ( !opacity.isEmpty() ) { m[ "cutout" ] = true; m[ "cutoff" ] = kAlphaCutoff; }
 		mats.append( m );
 	}
 
