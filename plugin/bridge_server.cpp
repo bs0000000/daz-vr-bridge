@@ -583,6 +583,11 @@ void Server::handleHello( Connection &c, const Frame &f )
 		// credential. The MAC is what stops a man in the middle: anyone can offer a
 		// key, but only this plugin and this headset can prove which key was meant.
 		w[ "crypto" ] = "v1";
+		// Which credential the MAC below was taken under. The client sends one and
+		// the plugin may have ignored it -- an old code left in the field while
+		// pairing is switched off -- and a client that guessed wrong would read the
+		// mismatch as a man in the middle, which is the one alarm that must not cry wolf.
+		w[ "bound" ] = c.authenticated ? ( c.bindSecret == code.toUtf8() ? "code" : "token" ) : "none";
 		w[ "key_n" ] = QString::fromLatin1( c.key->modulus().toBase64() );
 		w[ "key_e" ] = QString::fromLatin1( c.key->exponent().toBase64() );
 		w[ "nonce_s" ] = QString::fromLatin1( c.serverNonce.toBase64() );

@@ -63,7 +63,7 @@ has nothing to hide from.
 
 ```
 ->  hello        protocol, role, crypto: "v1", and ONE credential: token, or code
-<-  welcome      crypto: "v1", key_n, key_e, nonce_s (all base64), key_mac
+<-  welcome      crypto: "v1", key_n, key_e, nonce_s (all base64), key_mac, bound
 ->  secure.key   k (premaster, RSA-OAEP to that key), nonce_c
 <-  secure.ready first frame of the channel; carries session_token and token_days
 ```
@@ -81,6 +81,9 @@ connection from the premaster and BOTH nonces, so neither side alone decides the
 
 **Authentication** comes from `key_mac` = HMAC(credential, `"dazvrbridge key v1"` ‖ key_n ‖ key_e ‖ nonce_s).
 Anyone can offer an RSA key; only a plugin holding the same pairing code or token can prove which key it meant.
+`bound` says which credential the plugin actually used (`code`, `token` or `none`), because it may have ignored
+the one that was sent — an old code left in the field while pairing is switched off — and a client that guessed
+wrong would read the mismatch as a man in the middle, which is the one alarm that must not cry wolf.
 A client that connects over loopback with no credential at all gets confidentiality and no authentication,
 which is the right trade for a connection that never leaves the machine.
 

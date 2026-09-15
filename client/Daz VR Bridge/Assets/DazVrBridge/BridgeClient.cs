@@ -111,6 +111,9 @@ namespace DazVrBridge
 
         void ReaderLoop(string host, int port, string pairingCode, string session, string token)
         {
+            // A fresh attempt: whatever the last one failed with is history, and
+            // leaving it set would have BridgeSession throw away a good token later.
+            LastErrorCode = null;
             try
             {
                 _tcp = new TcpClient { NoDelay = true };
@@ -143,7 +146,12 @@ namespace DazVrBridge
                     if (frame.Type == "welcome")
                     {
                         Session = frame.Header.Value<string>("session");
-                        if (frame.Header.Value<string>("crypto") == "v1") Secure1(frame, secret);
+                        // The plugin says which credential it actually bound to: it may
+                        // have ignored the one we sent (an old code, pairing switched
+                        // off), and guessing wrong here would raise a false alarm about
+                        // someone in the middle.
+                        if (frame.Header.Value<string>("crypto") == "v1")
+                            Secure1(frame, frame.Header.Value<string>("bound") == "none" ? "" : secret);
                         else SetState(State.Connected);   // plaintext, by the plugin's choice
                     }
                     else if (frame.Type == "secure.ready")
