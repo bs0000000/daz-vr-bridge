@@ -15,6 +15,7 @@
 // the wheel drives, with words on it.
 
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 
 namespace DazVrBridge
@@ -42,6 +43,10 @@ namespace DazVrBridge
         string _bone;
         VrPanel.Row _armed;                   // a Delete waiting for its second press
         float _armedUntil;
+        bool _aiming;
+        LineRenderer _beam;
+        GameObject _spot;
+        TextMeshPro _caption;
 
         static readonly RaycastHit[] Hits = new RaycastHit[24];
         static readonly string[] TextureChoices = { "none", "opacity", "full" };
@@ -72,11 +77,136 @@ namespace DazVrBridge
             if (_armed != null && Time.time > _armedUntil) Disarm();
 
             var hand = HandFor(panelHand);
-            if (!hand || !hand.IsTracked) return;
-            if (!hand.PrimaryPressed || hand.HoldingSomething || VrHand.UiBlocked) return;
+            if (!hand || !hand.IsTracked || hand.HoldingSomething || VrHand.UiBlocked) { StopAiming(); return; }
 
-            if (_panel.IsOpen) { Disarm(); _panel.Close(); return; }
+            // Hold A to aim, release to open. A quick press is the same gesture with the
+            // holding left out, so it needs no rule of its own: the press aims for one
+            // frame and the release on the frame after fires at what that frame found.
+            //
+            // The aiming is the point. Reaching for something tells you what you have by
+            // touching it; pointing across a room tells you nothing at all unless what
+            // you are pointing at says its name back.
+            if (hand.PrimaryPressed)
+            {
+                if (_panel.IsOpen) { Disarm(); _panel.Close(); return; }
+                _aiming = true;
+                Aim(hand);
+                return;
+            }
+            if (!_aiming) return;
+            if (hand.PrimaryHeld) { Aim(hand); return; }
+
+            StopAiming();
             OpenFor(hand);
+        }
+
+        // ---- aiming
+
+        void Aim(VrHand hand)
+        {
+            _node = null; _figure = null; _bone = null;
+            var point = Pick(hand);
+            hand.AimRay(out var ray);
+
+            var scale = _rig ? _rig.Scale : 1f;
+            var beam = Beam();
+            beam.SetPosition(0, ray.origin + ray.direction * (0.03f * scale));
+            beam.SetPosition(1, point);
+            beam.widthMultiplier = 0.004f * scale;
+            beam.gameObject.SetActive(true);
+
+            var found = _figure != null || _node != null;
+            var spot = Spot();
+            spot.transform.position = point;
+            spot.transform.localScale = Vector3.one * ((found ? 0.03f : 0.015f) * scale);
+            spot.SetActive(true);
+
+            var caption = Caption();
+            var text = _figure != null ? _figure.Label + "  -  " + _bone
+                     : _node != null ? _node.Label
+                     : "Session settings";
+            if (caption.text != text) caption.text = text;
+            var head = Camera.main;
+            var at = point + Vector3.up * (0.07f * scale);
+            if (head)
+                caption.transform.SetPositionAndRotation(
+                    at, Quaternion.LookRotation(at - head.transform.position, Vector3.up));
+            caption.transform.localScale = Vector3.one * scale;
+            caption.gameObject.SetActive(true);
+        }
+
+        void StopAiming()
+        {
+            _aiming = false;
+            if (_beam) _beam.gameObject.SetActive(false);
+            if (_spot) _spot.SetActive(false);
+            if (_caption) _caption.gameObject.SetActive(false);
+        }
+
+        LineRenderer Beam()
+        {
+            if (_beam) return _beam;
+            var go = new GameObject("panel aim");
+            _beam = go.AddComponent<LineRenderer>();
+            _beam.useWorldSpace = true;
+            _beam.positionCount = 2;
+            _beam.sharedMaterial = BoneHandle.OverlayMaterial();
+            _beam.numCapVertices = 2;
+            _beam.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _beam.startColor = _beam.endColor = new Color(1f, 0.85f, 0.35f, 0.75f);
+            return _beam;
+        }
+
+        GameObject Spot()
+        {
+            if (_spot) return _spot;
+            _spot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            _spot.name = "panel aim spot";
+            Destroy(_spot.GetComponent<Collider>());
+            var r = _spot.GetComponent<Renderer>();
+            r.sharedMaterial = BoneHandle.OverlayMaterial();
+            var block = new MaterialPropertyBlock();
+            block.SetColor("_BaseColor", new Color(1f, 0.85f, 0.35f, 0.95f));
+            r.SetPropertyBlock(block);
+            return _spot;
+        }
+
+        TextMeshPro Caption()
+        {
+            if (_caption) return _caption;
+            var go = new GameObject("panel aim label");
+            _caption = go.AddComponent<TextMeshPro>();
+            _caption.rectTransform.sizeDelta = new Vector2(0.5f, 0.05f);
+            _caption.alignment = TextAlignmentOptions.Center;
+            _caption.textWrappingMode = TextWrappingModes.NoWrap;
+            _caption.enableAutoSizing = true;
+            _caption.fontSizeMin = 0.001f;
+            _caption.fontSizeMax = 300f;
+            _caption.color = Color.white;
+            var font = _caption.fontMaterial;
+            var zTest = Shader.PropertyToID("_ZTestMode");
+            if (font.HasProperty(zTest)) font.SetFloat(zTest, (float)UnityEngine.Rendering.CompareFunction.Always);
+            font.renderQueue = 4001;
+
+            var back = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            back.name = "ground";
+            Destroy(back.GetComponent<Collider>());
+            back.transform.SetParent(go.transform, false);
+            back.transform.localPosition = new Vector3(0f, 0f, 0.002f);
+            back.transform.localScale = new Vector3(0.52f, 0.062f, 1f);
+            var backRenderer = back.GetComponent<Renderer>();
+            backRenderer.sharedMaterial = BoneHandle.OverlayMaterial();
+            var block = new MaterialPropertyBlock();
+            block.SetColor("_BaseColor", new Color(0.05f, 0.07f, 0.10f, 0.78f));
+            backRenderer.SetPropertyBlock(block);
+            return _caption;
+        }
+
+        void OnDestroy()
+        {
+            if (_beam) Destroy(_beam.gameObject);
+            if (_spot) Destroy(_spot);
+            if (_caption) Destroy(_caption.gameObject);
         }
 
         /// Opens the session panel from somewhere else -- the wheel has a chip for it,
@@ -94,8 +224,10 @@ namespace DazVrBridge
 
         void OpenFor(VrHand hand)
         {
-            _node = null; _figure = null; _bone = null;
-            var at = Pick(hand);
+            // Whatever the last aiming frame settled on -- which is what the label under
+            // the cursor was showing. Picking again here would let a flick during the
+            // release open a panel about something the aim never named.
+            var at = Anchor();
 
             if (_figure != null)
             {
@@ -133,8 +265,10 @@ namespace DazVrBridge
                     found = g;
                 }
                 if (Take(found)) return Anchor();
-                // Nothing under the ray: put the session panel where it was pointing.
-                return ray.origin + ray.direction * (0.6f * (_rig ? _rig.Scale : 1f));
+                // Nothing grabbable under the ray: the spot lands on the first solid
+                // thing it meets, or out at arm's reach when it meets nothing at all.
+                if (Physics.Raycast(ray, out var wall, range)) return wall.point;
+                return ray.origin + ray.direction * (0.9f * (_rig ? _rig.Scale : 1f));
             }
             return Anchor();
         }

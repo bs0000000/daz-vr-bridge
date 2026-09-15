@@ -64,8 +64,9 @@ changed without going back to the desk.
   A ring at the hand fills while the hold charges -- anticlockwise amber for undo, clockwise green for redo --
   and flashes on each step it takes.
 - **A/X held while dragging a bone:** pass straight through props and bodies. Contact is an aid, not a law.
-- **Right A/X, empty hand:** the panel, about whatever you are pointing at -- a prop, a camera, a bone -- or
-  about the session when you are pointing at nothing. Press again to put it away.
+- **Right A/X, empty hand:** hold to aim -- a ray, a spot where it lands, and the name of whatever is under it
+  floating there -- and release to open that thing's panel. A quick press is the same gesture without the
+  holding. Pointing at nothing opens the session panel. Press again to put it away.
 - **Right B/Y held:** the settings wheel, anchored where your hand was when you pressed. Move the hand toward a
   chip to highlight it, release to apply, release in the middle to cancel. Posing and world movement pause while
   it is open.
@@ -84,7 +85,9 @@ The wheel is proprioception: eight fixed directions, learned once, used without 
 what you reach for in the middle of a pose and wrong for everything that has to be *read*, which is what the
 panel is for -- which object this is, how big its textures are, what this button is about to delete.
 
-Press A with an empty hand and a board appears at arm's length, off to the side of whatever it is about so the
+Hold A with an empty hand and a ray comes out of it, with a spot where it lands and the name of what it has
+found floating above that: a bone reads as its figure and its bone, a prop as its label, empty space as
+"Session settings". Release and that thing's board appears at arm's length, off to the side of whatever it is about so the
 subject stays in view. Point at it with the controller's aim pose and pull the trigger; sliders drag, and a
 choice steps forward or back depending on which half of the readout you click. It hangs from its top edge, so
 switching tab never moves the title out from under the cursor, and it comes back in front of you if you walk
