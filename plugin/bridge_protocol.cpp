@@ -6,23 +6,62 @@
 
 namespace DazVrBridge {
 
-QByteArray encodeFrame( const QJsonObject &header, const QByteArray &payload )
+QByteArray encodeBody( const QJsonObject &header, const QByteArray &payload )
 {
 	const QByteArray json = QJsonDocument( header ).toJson( QJsonDocument::Compact );
-	const quint32 headerLen = quint32( json.size() );
-	const quint32 frameLen = 4 + headerLen + quint32( payload.size() );
 
 	QByteArray out;
-	out.reserve( 8 + int( frameLen ) );
-
+	out.reserve( 4 + json.size() + payload.size() );
 	char len[4];
-	qToLittleEndian( frameLen, len );
-	out.append( len, 4 );
-	qToLittleEndian( headerLen, len );
+	qToLittleEndian( quint32( json.size() ), len );
 	out.append( len, 4 );
 	out.append( json );
 	out.append( payload );
 	return out;
+}
+
+QByteArray frameFromBody( const QByteArray &body )
+{
+	QByteArray out;
+	out.reserve( 4 + body.size() );
+	char len[4];
+	qToLittleEndian( quint32( body.size() ), len );
+	out.append( len, 4 );
+	out.append( body );
+	return out;
+}
+
+QByteArray encodeFrame( const QJsonObject &header, const QByteArray &payload )
+{
+	return frameFromBody( encodeBody( header, payload ) );
+}
+
+bool parseBody( const QByteArray &body, Frame &frame, QString &error )
+{
+	if ( body.size() < 4 )
+	{
+		error = "frame body is too short";
+		return false;
+	}
+	const quint32 headerLen = qFromLittleEndian<quint32>( body.constData() );
+	if ( quint64( headerLen ) + 4ull > quint64( body.size() ) )
+	{
+		error = "header length exceeds frame";
+		return false;
+	}
+
+	QJsonParseError perr;
+	const QJsonDocument doc = QJsonDocument::fromJson(
+		QByteArray( body.constData() + 4, int( headerLen ) ), &perr );
+	if ( perr.error != QJsonParseError::NoError || !doc.isObject() )
+	{
+		error = "header is not a JSON object: " + perr.errorString();
+		return false;
+	}
+
+	frame.header = doc.object();
+	frame.payload = body.mid( 4 + int( headerLen ) );
+	return true;
 }
 
 void FrameDecoder::feed( const QByteArray &bytes )
@@ -33,9 +72,9 @@ void FrameDecoder::feed( const QByteArray &bytes )
 	}
 }
 
-bool FrameDecoder::next( Frame &frame )
+bool FrameDecoder::next( Frame &frame, SecureChannel* channel )
 {
-	if ( !m_error.isEmpty() || m_buffer.size() < 8 )
+	if ( !m_error.isEmpty() || m_buffer.size() < 4 )
 	{
 		return false;
 	}
@@ -51,27 +90,20 @@ bool FrameDecoder::next( Frame &frame )
 		return false; // need more bytes
 	}
 
-	const quint32 headerLen = qFromLittleEndian<quint32>( m_buffer.constData() + 4 );
-	if ( headerLen > frameLen - 4 )
+	QByteArray body = m_buffer.mid( 4, int( frameLen ) );
+	m_buffer.remove( 0, int( 4 + frameLen ) );
+
+	if ( channel && channel->armed() )
 	{
-		m_error = "header length exceeds frame";
-		return false;
+		QByteArray plain;
+		if ( !channel->open( body, plain, m_error ) )
+		{
+			return false;
+		}
+		body = plain;
 	}
 
-	QJsonParseError perr;
-	const QJsonDocument doc = QJsonDocument::fromJson(
-		QByteArray( m_buffer.constData() + 8, int( headerLen ) ), &perr );
-	if ( perr.error != QJsonParseError::NoError || !doc.isObject() )
-	{
-		m_error = "header is not a JSON object: " + perr.errorString();
-		return false;
-	}
-
-	const quint32 payloadLen = frameLen - 4 - headerLen;
-	frame.header = doc.object();
-	frame.payload = QByteArray( m_buffer.constData() + 8 + headerLen, int( payloadLen ) );
-	m_buffer.remove( 0, int( 8 + frameLen ) );
-	return true;
+	return parseBody( body, frame, m_error );
 }
 
 } // namespace DazVrBridge

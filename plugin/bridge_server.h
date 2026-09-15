@@ -34,6 +34,23 @@ public:
 	bool	isListening() const;
 	quint16	port() const;
 
+	// Encrypt every frame after the handshake, and refuse clients from other
+	// machines that will not. Loopback may still talk in the clear.
+	void	setEncryption( bool on ) { m_encrypt = on; }
+	bool	encryption() const { return m_encrypt; }
+
+	// How long a paired headset is remembered, in days. 0 never issues a token, so
+	// the pairing code is asked for every time. Tokens are only ever handed over an
+	// encrypted channel -- a bearer credential in the clear is worse than no token.
+	void	setTokenDays( int days ) { m_tokenDays = days; }
+	int		tokenDays() const { return m_tokenDays; }
+	// The signing secret, so the pane can keep it across restarts; tokens would be
+	// useless if a new secret appeared every launch.
+	QByteArray	tokenSecret() const { return m_tokenSecret; }
+	void		setTokenSecret( const QByteArray &secret ) { m_tokenSecret = secret; }
+	// New secret: every token ever issued stops working.
+	void	forgetPairedClients();
+
 	// Answers UDP probes so a headset can find this machine without being told
 	// its address. Off means the port only exists for those who already know.
 	void	setDiscoverable( bool on );
@@ -65,6 +82,16 @@ private:
 		QString			role;		// "control" or "bulk" once hello succeeds
 		QString			session;
 		bool			ready = false;
+
+		// Security, per connection: a fresh RSA key that lives only until the
+		// premaster arrives, the nonce this side contributed, the credential the
+		// key exchange is bound to, and the record layer once both are agreed.
+		SecureChannel	channel;
+		RsaKey*			key = nullptr;
+		QByteArray		serverNonce;
+		QByteArray		bindSecret;
+		bool			wantsCrypto = false;
+		bool			authenticated = false;
 	};
 
 	void	onNewConnection();
@@ -76,6 +103,8 @@ private:
 
 	void	handleFrame( Connection &c, const Frame &f );
 	void	handleHello( Connection &c, const Frame &f );
+	void	handleSecureKey( Connection &c, const Frame &f );
+	QByteArray	issueToken( const QString &client ) const;
 	void	handleSceneRequest( Connection &c, const Frame &f );
 	void	handleAssetRequest( Connection &c, const Frame &f );
 	void	handlePoseCommit( Connection &c, const Frame &f );
@@ -118,6 +147,9 @@ private:
 	EulerSnapshot					m_selfTest;	// pending self-test, empty figureId when none
 	QString							m_pairingCode;
 	bool							m_pairingRequired = true;
+	bool							m_encrypt = true;
+	int								m_tokenDays = 7;
+	QByteArray						m_tokenSecret;
 	qint64							m_seq = 0;
 };
 

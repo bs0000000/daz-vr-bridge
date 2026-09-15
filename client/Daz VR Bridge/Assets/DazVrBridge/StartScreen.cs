@@ -207,12 +207,15 @@ namespace DazVrBridge
                     Set(Muted, $"Connecting to {session.host}:{session.port}...");
                     break;
                 case BridgeClient.State.Connected:
-                    Set(Accent, loader && loader.Busy ? loader.Status : "Connected. Waiting for the scene.");
+                    var how = session.Secure ? "Connected, encrypted." : "Connected, in the clear.";
+                    Set(Accent, loader && loader.Busy ? loader.Status : how + " Waiting for the scene.");
                     break;
                 case BridgeClient.State.Failed:
                     // Say what to do about it, not just that it went wrong.
                     var why = session.Control.LastError ?? "";
                     var hint = why.Contains("pairing") ? "Read the six digits from the VR Bridge pane in Daz."
+                        : why.Contains("in the middle") ? "The code does not match the key that answered. Check the six digits, and that this is the machine you meant."
+                        : why.Contains("encrypted connections") ? "That Daz is newer than this client, or this client needs rebuilding."
                         : why.Contains("refused") || why.Length == 0 ? "Is Daz running, with the VR Bridge pane started?"
                         : "";
                     Set(new Color(1f, 0.45f, 0.4f), $"{why}\n{hint}".Trim());
@@ -223,6 +226,8 @@ namespace DazVrBridge
                         Set(Muted, _picked.Pairing
                             ? $"{_picked.Label} is listening, and wants its pairing code."
                             : $"{_picked.Label} is listening. No code needed.");
+                    else if (session && session.HasSavedSession)
+                        Set(Muted, "Ready. This machine is paired, so no code is needed.");
                     else Set(Muted, "Ready. Press Connect.");
                     break;
             }
@@ -287,6 +292,14 @@ namespace DazVrBridge
             _status.fontSize = 15f;
 
             _connect = Action(panel, "Connect", Apply);
+            // Un-pairing, from the side that holds the token. The other side of the
+            // same coin is "Forget paired" in the VR Bridge pane, which drops every
+            // headset at once by changing the key the tokens are signed with.
+            Action(panel, "Forget the saved session", () =>
+            {
+                session?.ForgetSession();
+                Refresh();
+            });
         }
 
         // ---- small builders, so the layout above reads as a layout

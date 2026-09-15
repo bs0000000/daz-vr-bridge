@@ -39,6 +39,15 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 
 ## Getting connected
 
+Traffic is encrypted. The handshake hands over an ephemeral RSA key signed under the pairing code, and
+everything after it is AES-256 with an HMAC, so nobody else on the network can read a scene going past or
+inject a command into a session. Pair once and the plugin issues a signed token, good for seven days by
+default, that the headset sends instead of the code next time -- only ever inside the encrypted channel, since
+a token in the clear would be worse than no token. *Remember headsets* in the pane sets the days or turns it
+off, *Forget paired* invalidates every token at once, and the start screen has the same switch from the other
+side. `tools/crypto_interop/run.ps1` checks the plugin's and the client's crypto against the published test
+vectors and against each other; neither end can be exercised in place, so that harness is the test.
+
 The setup screen finds Daz by itself: it broadcasts on the LAN every couple of seconds and lists whatever
 answers, by machine name and open scene. One answer fills the address in; two or more and the choice is yours,
 because guessing which Daz someone meant is how a scene gets posed on the wrong machine. Typing an address by

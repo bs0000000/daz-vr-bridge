@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QtCore/QOverload>
 #include <QTextBrowser>
 #include <QTextDocument>
 #include <QVBoxLayout>
@@ -24,6 +25,12 @@ const char* c_settingPort = "Port";
 const char* c_settingAutoStart = "AutoStart";
 const char* c_settingPairing = "RequirePairingCode";
 const char* c_settingDiscover = "AnswerDiscovery";
+const char* c_settingEncrypt = "Encrypt";
+const char* c_settingTokenDays = "RememberDays";
+// The HS256 signing secret, kept so that tokens outlive a restart. It lives in the
+// pane's own settings file, which is as private as anything else in this user's
+// profile -- and losing it costs one re-pairing, not a lock-out.
+const char* c_settingTokenSecret = "PairingSecret";
 
 const int c_maxLogLines = 500;
 
@@ -58,6 +65,28 @@ DzVrBridgePane::DzVrBridgePane() :
 	m_pairingChk = new QCheckBox( tr( "Require pairing code from other machines" ) );
 	m_pairingChk->setChecked( true );
 	formLyt->addRow( QString(), m_pairingChk );
+
+	// Everything after the handshake is AES-256 with an HMAC. Other machines are
+	// required to do it; loopback may still talk in the clear, because a connection
+	// that never leaves the machine has nothing to hide from.
+	m_encryptChk = new QCheckBox( tr( "Encrypt traffic, and require it from other machines" ) );
+	m_encryptChk->setChecked( true );
+	formLyt->addRow( QString(), m_encryptChk );
+
+	// Pairing once rather than every evening. The token only ever travels inside the
+	// encrypted channel, so this needs the box above ticked to do anything at all.
+	QHBoxLayout* daysLyt = new QHBoxLayout();
+	m_daysSpn = new QSpinBox();
+	m_daysSpn->setRange( 0, 90 );
+	m_daysSpn->setValue( 7 );
+	m_daysSpn->setSuffix( tr( " days" ) );
+	m_daysSpn->setSpecialValueText( tr( "ask every time" ) );
+	m_daysSpn->setMinimumWidth( 110 );
+	m_forgetBtn = new QPushButton( tr( "Forget paired" ) );
+	daysLyt->addWidget( m_daysSpn );
+	daysLyt->addWidget( m_forgetBtn );
+	daysLyt->addStretch( 1 );
+	formLyt->addRow( tr( "Remember headsets" ), daysLyt );
 
 	// A headset that can find this machine does not have to be told where it is.
 	// Answering only when asked means an idle Daz puts nothing on the network.
@@ -104,6 +133,9 @@ DzVrBridgePane::DzVrBridgePane() :
 	connect( m_startBtn, &QPushButton::clicked, this, &DzVrBridgePane::toggleServer );
 	connect( m_pairingChk, &QCheckBox::toggled, server, &Server::setPairingRequired );
 	connect( m_discoverChk, &QCheckBox::toggled, server, &Server::setDiscoverable );
+	connect( m_encryptChk, &QCheckBox::toggled, server, &Server::setEncryption );
+	connect( m_daysSpn, QOverload<int>::of( &QSpinBox::valueChanged ), server, &Server::setTokenDays );
+	connect( m_forgetBtn, &QPushButton::clicked, this, &DzVrBridgePane::forgetPaired );
 	connect( server, &Server::listeningChanged, this, &DzVrBridgePane::updateStatus );
 	connect( server, &Server::connectionCountChanged, this, &DzVrBridgePane::updateStatus );
 	connect( server, &Server::logMessage, this, &DzVrBridgePane::appendLog );
@@ -123,6 +155,10 @@ void DzVrBridgePane::restoreSettings( const DzPaneSettings &settings )
 	m_autoStartChk->setChecked( settings.getBoolValue( c_settingAutoStart, false ) );
 	m_pairingChk->setChecked( settings.getBoolValue( c_settingPairing, true ) );
 	m_discoverChk->setChecked( settings.getBoolValue( c_settingDiscover, true ) );
+	m_encryptChk->setChecked( settings.getBoolValue( c_settingEncrypt, true ) );
+	m_daysSpn->setValue( settings.getIntValue( c_settingTokenDays, 7 ) );
+	Server::instance()->setTokenSecret(
+		QByteArray::fromBase64( settings.getStringValue( c_settingTokenSecret ).toLatin1() ) );
 
 	if ( m_autoStartChk->isChecked() && !Server::instance()->isListening() )
 	{
@@ -138,6 +174,10 @@ void DzVrBridgePane::saveSettings( DzPaneSettings &settings ) const
 	settings.setBoolValue( c_settingAutoStart, m_autoStartChk->isChecked() );
 	settings.setBoolValue( c_settingPairing, m_pairingChk->isChecked() );
 	settings.setBoolValue( c_settingDiscover, m_discoverChk->isChecked() );
+	settings.setBoolValue( c_settingEncrypt, m_encryptChk->isChecked() );
+	settings.setIntValue( c_settingTokenDays, m_daysSpn->value() );
+	settings.setStringValue( c_settingTokenSecret,
+		QString::fromLatin1( Server::instance()->tokenSecret().toBase64() ) );
 }
 
 void DzVrBridgePane::toggleServer()
@@ -151,11 +191,18 @@ void DzVrBridgePane::toggleServer()
 
 	server->setPairingRequired( m_pairingChk->isChecked() );
 	server->setDiscoverable( m_discoverChk->isChecked() );
+	server->setEncryption( m_encryptChk->isChecked() );
+	server->setTokenDays( m_daysSpn->value() );
 	QString error;
 	if ( !server->start( quint16( m_portSpn->value() ), &error ) )
 	{
 		m_statusLbl->setText( tr( "Failed: %1" ).arg( error ) );
 	}
+}
+
+void DzVrBridgePane::forgetPaired()
+{
+	Server::instance()->forgetPairedClients();
 }
 
 void DzVrBridgePane::updateStatus()

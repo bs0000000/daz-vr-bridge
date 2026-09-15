@@ -1,6 +1,7 @@
 #include "bridge_server.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QHostAddress>
@@ -28,6 +29,7 @@
 #include "dzviewport.h"
 #include "dzviewportmgr.h"
 
+#include "crypto.h"
 #include "scene_bake.h"
 #include "texture_bake.h"
 #include "version.h"
@@ -154,6 +156,10 @@ bool Server::start( quint16 port, QString* errorOut )
 	}
 
 	regeneratePairingCode();
+	if ( m_tokenSecret.size() < 32 )
+	{
+		m_tokenSecret = randomBytes( 32 );
+	}
 	openBeacon();
 	log( QString( "Listening on port %1 (pairing code %2)" ).arg( m_server->serverPort() ).arg( m_pairingCode ) );
 	emit listeningChanged( true );
@@ -173,6 +179,7 @@ void Server::stop()
 	const QList<QTcpSocket*> sockets = m_connections.keys();
 	for ( QTcpSocket* socket : sockets )
 	{
+		delete m_connections[ socket ].key;
 		socket->disconnect( this );
 		socket->close();
 		socket->deleteLater();
@@ -241,7 +248,7 @@ void Server::onReadyRead( QTcpSocket* socket )
 	c.decoder.feed( socket->readAll() );
 
 	Frame frame;
-	while ( c.decoder.next( frame ) )
+	while ( c.decoder.next( frame, &c.channel ) )
 	{
 		handleFrame( c, frame );
 		if ( !m_connections.contains( socket ) )
@@ -266,6 +273,7 @@ void Server::onDisconnected( QTcpSocket* socket )
 	}
 
 	log( QString( "%1 disconnected (%2)" ).arg( peerString( socket ), it->role.isEmpty() ? QString( "no hello" ) : it->role ) );
+	delete it->key;
 	m_connections.erase( it );
 	socket->deleteLater();
 	emit connectionCountChanged( m_connections.size() );
@@ -289,6 +297,12 @@ void Server::handleFrame( Connection &c, const Frame &f )
 			sendError( c, f, "hello_required", "first frame must be hello" );
 			c.socket->close();
 		}
+		return;
+	}
+
+	if ( type == "secure.key" )
+	{
+		handleSecureKey( c, f );
 		return;
 	}
 
@@ -471,13 +485,65 @@ void Server::handleHello( Connection &c, const Frame &f )
 		return;
 	}
 
+	// Who is this, and what does the key exchange get bound to?
+	//
+	// Two credentials are accepted: the six digits from the pane, and a token this
+	// plugin signed earlier for a headset that has already been through the digits
+	// once. Whichever is used also becomes the secret that authenticates the
+	// ephemeral key below, so a listener who knows neither cannot stand in the middle.
 	const bool remote = !c.socket->peerAddress().isLoopback();
-	if ( remote && m_pairingRequired && h.value( "code" ).toString() != m_pairingCode )
+	const QString code = h.value( "code" ).toString();
+	const QByteArray token = h.value( "token" ).toString().toUtf8();
+
+	QString tokenError;
+	if ( !token.isEmpty() )
 	{
-		sendError( c, f, "bad_pairing_code", "pairing code missing or wrong; read it from the VR Bridge pane" );
-		log( "Rejected " % peerString( c.socket ) % ": wrong pairing code" );
+		QJsonObject claims;
+		if ( verifyToken( m_tokenSecret, token, claims, tokenError ) )
+		{
+			c.authenticated = true;
+			c.bindSecret = token;
+		}
+	}
+	if ( !c.authenticated && !code.isEmpty() && code == m_pairingCode )
+	{
+		c.authenticated = true;
+		c.bindSecret = code.toUtf8();
+	}
+
+	if ( !c.authenticated && remote && m_pairingRequired )
+	{
+		const bool stale = !token.isEmpty();
+		sendError( c, f, stale ? "bad_token" : "bad_pairing_code",
+			stale ? "saved session rejected (" % tokenError % "); enter the pairing code again"
+				  : QString( "pairing code missing or wrong; read it from the VR Bridge pane" ) );
+		log( "Rejected " % peerString( c.socket ) % ( stale ? ": " % tokenError : QString( ": wrong pairing code" ) ) );
 		c.socket->close();
 		return;
+	}
+
+	// Encryption. The client says whether it can; this side says whether it must.
+	const bool offered = h.value( "crypto" ).toString() == "v1";
+	if ( m_encrypt && !offered && remote )
+	{
+		sendError( c, f, "encryption_required",
+			"this Daz only accepts encrypted connections; update the VR client or turn encryption off in the VR Bridge pane" );
+		log( "Rejected " % peerString( c.socket ) % ": will not encrypt" );
+		c.socket->close();
+		return;
+	}
+	c.wantsCrypto = m_encrypt && offered;
+	if ( c.wantsCrypto )
+	{
+		c.key = new RsaKey();
+		c.serverNonce = randomBytes( 16 );
+		if ( !c.key->generate( 2048 ) || c.serverNonce.size() != 16 )
+		{
+			delete c.key;
+			c.key = nullptr;
+			c.wantsCrypto = false;
+			log( "Could not generate a key for " % peerString( c.socket ) % "; this connection stays in the clear" );
+		}
 	}
 
 	if ( role == "control" )
@@ -511,10 +577,98 @@ void Server::handleHello( Connection &c, const Frame &f )
 	{
 		w[ "edit" ] = undoSummary();
 	}
+	if ( c.wantsCrypto )
+	{
+		// The ephemeral public key, this side's nonce, and a MAC over both under the
+		// credential. The MAC is what stops a man in the middle: anyone can offer a
+		// key, but only this plugin and this headset can prove which key was meant.
+		w[ "crypto" ] = "v1";
+		w[ "key_n" ] = QString::fromLatin1( c.key->modulus().toBase64() );
+		w[ "key_e" ] = QString::fromLatin1( c.key->exponent().toBase64() );
+		w[ "nonce_s" ] = QString::fromLatin1( c.serverNonce.toBase64() );
+		w[ "key_mac" ] = QString::fromLatin1( hmacSha256( c.bindSecret,
+			QByteArray( "dazvrbridge key v1" ) + c.key->modulus() + c.key->exponent() + c.serverNonce ).toBase64() );
+	}
 	send( c.socket, w );
 
 	log( QString( "%1 joined as %2 (%3, session %4)" )
 		.arg( h.value( "client" ).toString( "client" ), role, peerString( c.socket ), c.session.left( 8 ) ) );
+}
+
+// The client's half of the key exchange: a premaster encrypted to the ephemeral key,
+// and the nonce it contributed. Both nonces go into the derivation, so neither side
+// alone decides the keys and a captured handshake cannot be replayed at a server that
+// has since picked a new one.
+//
+// Everything after this frame is encrypted in both directions, including the session
+// token -- which is a bearer credential and so is never sent in the clear.
+void Server::handleSecureKey( Connection &c, const Frame &f )
+{
+	if ( !c.wantsCrypto || !c.key )
+	{
+		sendError( c, f, "no_crypto", "this connection did not agree to encryption" );
+		return;
+	}
+
+	const QByteArray cipher = QByteArray::fromBase64( f.header.value( "k" ).toString().toLatin1() );
+	const QByteArray clientNonce = QByteArray::fromBase64( f.header.value( "nonce_c" ).toString().toLatin1() );
+
+	QByteArray premaster;
+	if ( clientNonce.size() != 16 || !c.key->decryptOaep( cipher, premaster ) || premaster.size() != 32 )
+	{
+		sendError( c, f, "bad_key", "the key exchange did not decrypt" );
+		log( "Key exchange failed with " % peerString( c.socket ) % "; closing" );
+		c.socket->close();
+		return;
+	}
+
+	c.channel.arm( premaster, clientNonce, c.serverNonce, true );
+	delete c.key;					// its work is done; nothing can decrypt this session later
+	c.key = nullptr;
+	premaster.fill( 0 );
+
+	QJsonObject h;
+	h[ "t" ] = "secure.ready";
+	h[ "seq" ] = m_seq++;
+	h[ "ref_seq" ] = f.seq();
+	h[ "cipher" ] = "aes-256-cbc+hmac-sha256";
+
+	// A token only for a client that proved who it was, only on the control
+	// connection, and only now -- inside the channel it just helped set up.
+	if ( c.role == "control" && m_tokenDays > 0 && c.authenticated )
+	{
+		const QByteArray token = issueToken( f.header.value( "client" ).toString( "headset" ) );
+		if ( !token.isEmpty() )
+		{
+			h[ "session_token" ] = QString::fromLatin1( token );
+			h[ "token_days" ] = m_tokenDays;
+		}
+	}
+	send( c.socket, h );
+
+	log( "Secured " % peerString( c.socket ) % " (" % c.role % ")" );
+}
+
+QByteArray Server::issueToken( const QString &client ) const
+{
+	if ( m_tokenSecret.size() < 32 )
+	{
+		return QByteArray();
+	}
+	const qint64 now = QDateTime::currentSecsSinceEpoch();
+	QJsonObject claims;
+	claims[ "iss" ] = "daz-vr-bridge";
+	claims[ "sub" ] = client;
+	claims[ "iat" ] = double( now );
+	claims[ "exp" ] = double( now + qint64( m_tokenDays ) * 24 * 60 * 60 );
+	claims[ "jti" ] = QUuid::createUuid().toString( QUuid::WithoutBraces );
+	return signToken( m_tokenSecret, claims );
+}
+
+void Server::forgetPairedClients()
+{
+	m_tokenSecret = randomBytes( 32 );
+	log( "Forgot every paired headset; they will be asked for the pairing code again" );
 }
 
 void Server::handleSceneRequest( Connection &c, const Frame &f )
@@ -1062,7 +1216,23 @@ void Server::onFigureChanged( DzSkeleton* figure )
 
 void Server::send( QTcpSocket* socket, const QJsonObject &header, const QByteArray &payload )
 {
-	socket->write( encodeFrame( header, payload ) );
+	QByteArray body = encodeBody( header, payload );
+
+	auto it = m_connections.find( socket );
+	if ( it != m_connections.end() && it->channel.armed() )
+	{
+		body = it->channel.seal( body );
+		if ( body.isEmpty() )
+		{
+			// Sealing can only fail if CNG itself failed; carrying on would put a
+			// plaintext frame where the client expects a record, which it would read
+			// as a protocol error anyway. Say so and drop the connection.
+			log( "Could not encrypt a frame for " % peerString( socket ) % "; closing" );
+			socket->close();
+			return;
+		}
+	}
+	socket->write( frameFromBody( body ) );
 }
 
 void Server::sendError( Connection &c, const Frame &ref, const QString &code, const QString &msg )
@@ -1078,13 +1248,22 @@ void Server::sendError( Connection &c, const Frame &ref, const QString &code, co
 
 void Server::broadcastControl( const QJsonObject &header )
 {
-	const QByteArray bytes = encodeFrame( header );
-	for ( auto it = m_connections.begin(); it != m_connections.end(); ++it )
+	// One encode per connection, because each has its own keys. A connection that is
+	// part-way through its handshake is skipped rather than sent plaintext it would
+	// try to read as a record; it asks for the scene as soon as it is secured anyway.
+	const QList<QTcpSocket*> sockets = m_connections.keys();
+	for ( QTcpSocket* socket : sockets )
 	{
-		if ( it->ready && it->role == "control" )
+		auto it = m_connections.find( socket );
+		if ( it == m_connections.end() || !it->ready || it->role != "control" )
 		{
-			it->socket->write( bytes );
+			continue;
 		}
+		if ( it->wantsCrypto && !it->channel.armed() )
+		{
+			continue;
+		}
+		send( socket, header );
 	}
 }
 

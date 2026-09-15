@@ -1,9 +1,17 @@
 // Wire framing shared with the Daz Studio plugin. See ../../../protocol/PROTOCOL.md.
 //
 //   u32   frame_len    bytes that follow this field (little-endian)
+//   u8[]  body         frame_len bytes
+//
+// and the body is either a plain frame
+//
 //   u32   header_len
 //   u8[]  header       UTF-8 JSON object, always has "t" (type) and "seq"
-//   u8[]  payload      frame_len - 4 - header_len bytes, often empty
+//   u8[]  payload      the rest, often empty
+//
+// or, once the connection has been secured, one encrypted record wrapping exactly
+// those bytes (see BridgeCrypto). The length prefix stays outside, in the clear,
+// because it is how the stream gets cut into records in the first place.
 
 using System;
 using System.IO;
@@ -24,22 +32,31 @@ namespace DazVrBridge
         public string Type => Header?.Value<string>("t");
         public long Seq => Header?.Value<long?>("seq") ?? -1;
 
-        public static byte[] Encode(JObject header, byte[] payload = null)
+        /// The inner body: header length, header, payload. What gets encrypted.
+        public static byte[] EncodeBody(JObject header, byte[] payload = null)
         {
             var json = Encoding.UTF8.GetBytes(header.ToString(Newtonsoft.Json.Formatting.None));
             var payloadLen = payload?.Length ?? 0;
-            var frameLen = 4 + json.Length + payloadLen;
+            var body = new byte[4 + json.Length + payloadLen];
+            WriteU32(body, 0, (uint)json.Length);
+            Buffer.BlockCopy(json, 0, body, 4, json.Length);
+            if (payloadLen > 0) Buffer.BlockCopy(payload, 0, body, 4 + json.Length, payloadLen);
+            return body;
+        }
 
-            var buf = new byte[8 + frameLen];
-            WriteU32(buf, 0, (uint)frameLen);
-            WriteU32(buf, 4, (uint)json.Length);
-            Buffer.BlockCopy(json, 0, buf, 8, json.Length);
-            if (payloadLen > 0) Buffer.BlockCopy(payload, 0, buf, 8 + json.Length, payloadLen);
-            return buf;
+        public static byte[] Encode(JObject header, byte[] payload = null, SecureChannel channel = null)
+        {
+            var body = EncodeBody(header, payload);
+            if (channel != null && channel.Armed) body = channel.Seal(body);
+
+            var framed = new byte[4 + body.Length];
+            WriteU32(framed, 0, (uint)body.Length);
+            Buffer.BlockCopy(body, 0, framed, 4, body.Length);
+            return framed;
         }
 
         // Blocking read of exactly one frame. Returns null on a clean EOF.
-        public static BridgeFrame Read(Stream stream)
+        public static BridgeFrame Read(Stream stream, SecureChannel channel = null)
         {
             var lenBytes = new byte[4];
             if (!ReadExactly(stream, lenBytes, 4)) return null;
@@ -51,12 +68,19 @@ namespace DazVrBridge
             if (!ReadExactly(stream, body, (int)frameLen))
                 throw new EndOfStreamException("connection closed mid-frame");
 
+            if (channel != null && channel.Armed) body = channel.Open(body);
+            return ParseBody(body);
+        }
+
+        public static BridgeFrame ParseBody(byte[] body)
+        {
+            if (body.Length < 4) throw new InvalidDataException("frame body is too short");
             var headerLen = ReadU32(body, 0);
-            if (headerLen > frameLen - 4)
+            if (headerLen + 4 > body.Length)
                 throw new InvalidDataException("header length exceeds frame");
 
             var json = Encoding.UTF8.GetString(body, 4, (int)headerLen);
-            var payloadLen = (int)(frameLen - 4 - headerLen);
+            var payloadLen = body.Length - 4 - (int)headerLen;
             var payload = new byte[payloadLen];
             if (payloadLen > 0) Buffer.BlockCopy(body, 4 + (int)headerLen, payload, 0, payloadLen);
 

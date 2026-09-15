@@ -31,13 +31,13 @@ Max frame is 512 MB (plugin closes the connection on anything larger or malforme
 4. `asset.request {hashes}` on bulk → one `asset.data` per hash.
 5. Steady state: gestures → control messages; desk-side edits → `pose.state` / `node.state`; structure changes → `scene.changed`.
 
-Pairing: a client whose peer address is not loopback must send `code` (six digits shown in the VR Bridge pane) in `hello`, unless the pane has pairing turned off.
+Pairing: a client whose peer address is not loopback must send `code` (six digits shown in the VR Bridge pane) or a `token` this plugin signed earlier, in `hello`, unless the pane has pairing turned off. It must also send `crypto` unless the pane has encryption turned off — see **Security** below.
 
 ## Messages · client → plugin
 
 | Type | Conn | Fields | Status |
 |---|---|---|---|
-| `hello` | both | `protocol:1, role, client, session?, code?` | **Phase 0 ✓** |
+| `hello` | both | `protocol:1, role, client, session?, crypto?`, plus exactly one of `code?` / `token?` | **Phase 0 ✓** |
 | `ping` | control | — | **Phase 0 ✓** |
 | `scene.request` | control | `textures: none\|opacity\|full, tex_max, influences: 4\|8, include_hidden, meshes, hulls, region_radius, region_center?` — `hulls` approximates geometry the bake cannot use (see below); `region_radius` in cm withholds the geometry of any node whose world bounding box is further than that from the region's centre, which is `region_center` when given and otherwise Daz's primary selection. Such a node still appears in the manifest, with its transform and its place in the tree, carrying `mesh_skipped`; only its geometry is withheld — the part that costs a bake, a transfer and a draw. `bake.outside_region` counts them. | **Phase 1b ✓** |
 | `asset.request` | bulk | `hashes: [...]` | **Phase 1b ✓** |
@@ -52,7 +52,44 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `camera.set` | control | `camera, pos, rot, focal_mm, commit, label` — as above plus `setFocalLength` | **Phase 3 ✓** |
 | `node.visible` | control | `node, visible` — hides or shows a node at the desk, as one undo step. Not for bones. → `node.result` | **Phase 4 ✓** |
 | `node.delete` | control | `node` — removes a node from the scene, as one undo step. Not for bones. → `node.result`, and the node-list change brings a `scene.changed` of its own. | **Phase 4 ✓** |
+| `secure.key` | both | `k` (premaster, RSA-OAEP, base64), `nonce_c` — second leg of the handshake; the last frame in the clear | **Phase 4 ✓** |
 | `pose.preview` | control | `figure, bones` | **reserved, v2** — v1 plugin answers `error deferred_v2` |
+
+## Security
+
+Every connection is encrypted after its handshake, and a plugin with encryption on refuses an unencrypted
+client from another machine. Loopback may still talk in the clear: a connection that never leaves the machine
+has nothing to hide from.
+
+```
+->  hello        protocol, role, crypto: "v1", and ONE credential: token, or code
+<-  welcome      crypto: "v1", key_n, key_e, nonce_s (all base64), key_mac
+->  secure.key   k (premaster, RSA-OAEP to that key), nonce_c
+<-  secure.ready first frame of the channel; carries session_token and token_days
+```
+
+**Primitives.** RSA-2048-OAEP (SHA-1 mask) for key transport, AES-256-CBC with HMAC-SHA256 in encrypt-then-MAC
+order for records, HKDF-SHA256 for key derivation. The set is the intersection of what Qt/CNG and Unity's Mono
+both do without shipping a library; it is TLS 1.2's construction assembled from parts rather than invented.
+`tools/crypto_interop/run.ps1` builds both implementations and checks them against the published vectors and
+against each other, because neither end can be exercised in place.
+
+**Records.** `"DZE" 0x01 | u64 counter (LE) | u8[16] iv | ciphertext | u8[32] mac`, wrapped in the ordinary
+`u32 frame_len`. The MAC covers everything before it and is checked before anything is decrypted; the counter
+must strictly increase, so a record cannot be replayed or reordered into the stream. Keys are derived per
+connection from the premaster and BOTH nonces, so neither side alone decides them.
+
+**Authentication** comes from `key_mac` = HMAC(credential, `"dazvrbridge key v1"` ‖ key_n ‖ key_e ‖ nonce_s).
+Anyone can offer an RSA key; only a plugin holding the same pairing code or token can prove which key it meant.
+A client that connects over loopback with no credential at all gets confidentiality and no authentication,
+which is the right trade for a connection that never leaves the machine.
+
+**Tokens** are HS256 JWTs (`iss`, `sub`, `iat`, `exp`, `jti`) signed with a secret the plugin keeps and never
+sends. They are issued only inside the encrypted channel, only on the control connection, and only to a client
+that authenticated — a bearer credential in the clear would be worse than no token at all. The client sends a
+token *instead of* the code, not as well: whichever it sends is what the key exchange binds to, and the plugin
+cannot say which it picked. A rejected token comes back as `bad_token`, and the client drops it and asks for
+the code. *Forget paired* in the pane rotates the secret and invalidates every token at once.
 
 ## Discovery (UDP, same port number)
 
@@ -81,6 +118,7 @@ discovery probes* switch turns it off, and then the port only exists for those w
 | `asset.data` | bulk | `hash, kind, size` + payload | **Phase 1b ✓** (unknown hash → `error asset_unknown` with `hash`; a texture that cannot be produced → `asset_failed`) |
 | `pose.state` | control | `figure, bones: [ { id, ws: { pos, rot } } ], selftest?` — every bone's Daz world transform. Sent whenever any bone of that figure moves (debounced 100 ms), after a `pose.commit`, and for `selftest.begin`. | **Phase 2a ✓** |
 | `selftest.result` | control | `figure, pass, bones, max_error_deg, worst, error?` | **Phase 2a ✓** (pass = every Euler control back within 0.01°) |
+| `secure.ready` | both | `cipher`, and on a control connection `session_token`, `token_days` — the first frame of the encrypted channel |  **Phase 4 ✓** |
 | `node.result` | control | `node, action: visible\|delete, ok` — the answer to `node.visible` / `node.delete` | **Phase 4 ✓** |
 | `node.state` | control | `node, transform: { pos, rot, scale }, focal_mm?` — any prop/camera/light moved at the desk (debounced 100 ms) and the confirmation after `node.transform`/`camera.set` | **Phase 3 ✓** |
 

@@ -31,6 +31,8 @@ endif( WIN32 )
 add_library( ${DZ_PLUGIN_TGT_NAME} SHARED
 	bridge_protocol.cpp
 	bridge_protocol.h
+	crypto.cpp
+	crypto.h
 	bridge_server.cpp
 	bridge_server.h
 	bridge_pane.cpp
@@ -58,6 +60,11 @@ target_link_libraries( ${DZ_PLUGIN_TGT_NAME}
 	${DZSDK_QT_SCRIPT_TARGET}
 	${DZSDK_QT_NETWORK_TARGET}
 )
+
+if( WIN32 )
+	# CNG: the record layer's AES and HMAC, the handshake's RSA, and the RNG.
+	target_link_libraries( ${DZ_PLUGIN_TGT_NAME} PRIVATE bcrypt )
+endif()
 
 if( WIN32 )
 	target_link_libraries( ${DZ_PLUGIN_TGT_NAME}

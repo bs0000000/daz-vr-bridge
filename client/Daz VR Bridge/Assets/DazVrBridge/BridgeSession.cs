@@ -30,9 +30,19 @@ namespace DazVrBridge
 
         const float PingInterval = 2f;
         const float ReconnectDelay = 3f;
+        const string TokenPrefix = "DazVrBridge.Setup.token.";
 
         float _nextPing;
         float _nextReconnect;
+        string _savedToken = "";
+
+        /// True once the control connection is encrypted end to end.
+        public bool Secure => Control != null && Control.Secure;
+
+        // A session the plugin signed for this machine, so the pairing code is typed
+        // once rather than every evening. Keyed by the machine it came from, because a
+        // token from one Daz means nothing to another.
+        string TokenKey => TokenPrefix + host + ":" + port;
 
         void Awake()
         {
@@ -60,6 +70,7 @@ namespace DazVrBridge
 
         void Start()
         {
+            _savedToken = PlayerPrefs.GetString(TokenKey, "");
             // The start screen connects when it is ready, so it can apply saved settings
             // first rather than have a connection race the fields that configure it.
             if (!FindAnyObjectByType<StartScreen>()) ConnectControl();
@@ -70,8 +81,20 @@ namespace DazVrBridge
         {
             Bulk?.Dispose();
             Control?.Dispose();
+            _savedToken = PlayerPrefs.GetString(TokenKey, "");
             ConnectControl();
         }
+
+        /// Forgets the saved session for this plugin. The pairing code will be asked
+        /// for again next time, which is the point: it is how a headset is un-paired.
+        public void ForgetSession()
+        {
+            _savedToken = "";
+            PlayerPrefs.DeleteKey(TokenKey);
+            PlayerPrefs.Save();
+        }
+
+        public bool HasSavedSession => !string.IsNullOrEmpty(_savedToken);
 
 
         void OnDestroy()
@@ -84,6 +107,7 @@ namespace DazVrBridge
         {
             Control.Pump();
             Bulk.Pump();
+            Remember();
 
             switch (Control.Current)
             {
@@ -114,13 +138,35 @@ namespace DazVrBridge
         {
             _nextReconnect = Time.time + ReconnectDelay;
             Bulk.Dispose(); // a new control session invalidates the old bulk one
-            Control.Connect(host, port, pairingCode);
+            Control.Connect(host, port, pairingCode, null, _savedToken);
         }
 
         void ConnectBulk()
         {
             _nextReconnect = Time.time + ReconnectDelay;
-            Bulk.Connect(host, port, pairingCode, Control.Session);
+            Bulk.Connect(host, port, pairingCode, Control.Session, _savedToken);
+        }
+
+        // PlayerPrefs is a Unity API and the reader thread must not touch it, so the
+        // token it was handed is collected here instead.
+        void Remember()
+        {
+            var issued = Control.IssuedToken;
+            if (!string.IsNullOrEmpty(issued) && issued != _savedToken)
+            {
+                _savedToken = issued;
+                PlayerPrefs.SetString(TokenKey, issued);
+                PlayerPrefs.Save();
+                Debug.Log($"[DazVrBridge] Paired for {Control.TokenDays} days; the code will not be asked for again until then");
+            }
+
+            // A token the plugin will not take any more is worse than no token: it is
+            // the only credential we send, so it has to go before the next dial.
+            if (Control.LastErrorCode == "bad_token" && HasSavedSession)
+            {
+                Debug.Log("[DazVrBridge] The saved session expired; using the pairing code");
+                ForgetSession();
+            }
         }
 
         void OnControlState(BridgeClient.State s)

@@ -25,6 +25,7 @@ public:
 
 private:
 	Q_SLOT void	toggleServer();
+	Q_SLOT void	forgetPaired();
 	Q_SLOT void	updateStatus();
 	Q_SLOT void	appendLog( const QString &line );
 
@@ -33,6 +34,9 @@ private:
 	QCheckBox*		m_autoStartChk = nullptr;
 	QCheckBox*		m_pairingChk = nullptr;
 	QCheckBox*		m_discoverChk = nullptr;
+	QCheckBox*		m_encryptChk = nullptr;
+	QSpinBox*		m_daysSpn = nullptr;
+	QPushButton*	m_forgetBtn = nullptr;
 	QLabel*			m_statusLbl = nullptr;
 	QLabel*			m_addressLbl = nullptr;
 	QLabel*			m_codeLbl = nullptr;
