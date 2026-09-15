@@ -42,7 +42,7 @@ namespace DazVrBridge
         public static bool AnyHolding { get; private set; }
         static int _heldCount;
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetInteraction() { HapticGain = 1f; UiBlocked = false; _heldCount = 0; AnyHolding = false; }
+        static void ResetInteraction() { HapticGain = 1f; UiBlocked = false; _heldCount = 0; AnyHolding = false; _backgroundReady = false; }
         public bool TriggerPressed => IsTracked && _monTrigger.WasPressedThisFrame();
         public bool HoldingSomething => _grabbed != null;
 
@@ -62,6 +62,7 @@ namespace DazVrBridge
 
         void Awake()
         {
+            KeepInputInBackground();
             // UnityEngine objects cannot be created by a MonoBehaviour field initializer;
             // Awake is the first safe place to allocate the reusable property block.
             _visBlock = new MaterialPropertyBlock();
@@ -90,6 +91,39 @@ namespace DazVrBridge
             _visColor = side == Side.Left ? new Color(0.85f, 0.9f, 1f, 0.9f) : new Color(1f, 0.9f, 0.85f, 0.9f);
             SetVisAlpha(0.9f);
             _vis.SetActive(false);
+        }
+
+        // Alt-tabbing out of a VR session must not cost tracking, and by default it does.
+        //
+        // Unity resets every control that is not marked noisy when the app loses focus,
+        // and trackingState is not noisy: it drops to zero. Position and rotation ARE
+        // noisy, so they keep arriving -- which is why the buttons and the pose look fine
+        // while the hand freezes. The gate below reads that zeroed state as "nothing is
+        // valid" and stops taking the pose, and nothing ever reopens it, because a runtime
+        // sends trackingState when it CHANGES and from its side it never changed.
+        //
+        // So: keep running while unfocused, keep feeding input while unfocused (in the
+        // editor too, where the Game view loses focus to the Inspector -- which is where
+        // this was reproduced), and treat a zeroed state as unknown rather than dead.
+        static bool _backgroundReady;
+
+        static void KeepInputInBackground()
+        {
+            if (_backgroundReady) return;
+            _backgroundReady = true;
+            Application.runInBackground = true;
+            var settings = InputSystem.settings;
+            settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+            settings.editorInputBehaviorInPlayMode =
+                InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+        }
+
+        // Belt and braces for a runtime that disabled or re-created our device anyway:
+        // re-resolving the bindings puts every action back on whatever is live now.
+        void OnApplicationFocus(bool focused)
+        {
+            if (!focused || !isActiveAndEnabled) return;
+            foreach (var a in AllActions()) { a.Disable(); a.Enable(); }
         }
 
         // A button action with every binding that could mean that button on some
@@ -185,6 +219,11 @@ namespace DazVrBridge
                 // position, bit 2 = rotation); otherwise keep the last one rather than
                 // snapping to the origin. Runtimes usually keep both valid on the IMU alone.
                 var state = _trackingState.controls.Count > 0 ? (int)_trackingState.ReadValue<int>() : 3;
+                // Zero means "no control, or a control that was reset behind our back",
+                // not "the runtime says this hand is gone". Fail open: a controller that
+                // really has stopped reporting simply keeps sending the same pose, which
+                // is the value this branch would hold on to anyway.
+                if (state == 0) state = 3;
                 if ((state & 1) != 0)
                 {
                     var p = _position.ReadValue<Vector3>();

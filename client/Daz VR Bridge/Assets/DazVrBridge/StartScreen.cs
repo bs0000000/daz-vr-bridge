@@ -28,8 +28,14 @@ namespace DazVrBridge
 
         public BridgeSession session;
         public SceneLoader loader;
-        [Tooltip("Connect as soon as the app starts, using the saved settings. Off: wait for Connect.")]
-        public bool autoConnect = true;
+        // Off, and it stays off. A setup screen that connects before anyone has read it is
+        // not a setup screen: the first version dialled on start with the saved settings,
+        // and the scene was up and the screen gone before the headset was on. Everything
+        // here is remembered, so the cost of waiting is one click on a button that is
+        // already under the mouse -- and the click is what makes this the moment the
+        // settings can be changed at all.
+        [Tooltip("Dial as soon as the app starts, using the saved settings, instead of waiting for Connect.")]
+        public bool autoConnect;
 
         Canvas _canvas;
         TMP_InputField _host, _port, _code, _texMax, _region;
@@ -146,7 +152,7 @@ namespace DazVrBridge
                     Set(new Color(1f, 0.45f, 0.4f), $"{why}\n{hint}".Trim());
                     break;
                 default:
-                    Set(Muted, _everConnected ? "Disconnected. Retrying." : "Not connected.");
+                    Set(Muted, _everConnected ? "Disconnected. Retrying." : "Ready. Press Connect.");
                     break;
             }
             if (_connect) _connect.interactable = state != BridgeClient.State.Connecting;
