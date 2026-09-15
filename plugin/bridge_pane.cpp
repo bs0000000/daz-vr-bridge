@@ -23,6 +23,7 @@ namespace {
 const char* c_settingPort = "Port";
 const char* c_settingAutoStart = "AutoStart";
 const char* c_settingPairing = "RequirePairingCode";
+const char* c_settingDiscover = "AnswerDiscovery";
 
 const int c_maxLogLines = 500;
 
@@ -57,6 +58,12 @@ DzVrBridgePane::DzVrBridgePane() :
 	m_pairingChk = new QCheckBox( tr( "Require pairing code from other machines" ) );
 	m_pairingChk->setChecked( true );
 	formLyt->addRow( QString(), m_pairingChk );
+
+	// A headset that can find this machine does not have to be told where it is.
+	// Answering only when asked means an idle Daz puts nothing on the network.
+	m_discoverChk = new QCheckBox( tr( "Answer discovery probes on the network" ) );
+	m_discoverChk->setChecked( true );
+	formLyt->addRow( QString(), m_discoverChk );
 
 	m_autoStartChk = new QCheckBox( tr( "Start automatically when this pane opens" ) );
 	formLyt->addRow( QString(), m_autoStartChk );
@@ -96,6 +103,7 @@ DzVrBridgePane::DzVrBridgePane() :
 	Server* server = Server::instance();
 	connect( m_startBtn, &QPushButton::clicked, this, &DzVrBridgePane::toggleServer );
 	connect( m_pairingChk, &QCheckBox::toggled, server, &Server::setPairingRequired );
+	connect( m_discoverChk, &QCheckBox::toggled, server, &Server::setDiscoverable );
 	connect( server, &Server::listeningChanged, this, &DzVrBridgePane::updateStatus );
 	connect( server, &Server::connectionCountChanged, this, &DzVrBridgePane::updateStatus );
 	connect( server, &Server::logMessage, this, &DzVrBridgePane::appendLog );
@@ -114,6 +122,7 @@ void DzVrBridgePane::restoreSettings( const DzPaneSettings &settings )
 	m_portSpn->setValue( settings.getIntValue( c_settingPort, DazVrBridge::kDefaultPort ) );
 	m_autoStartChk->setChecked( settings.getBoolValue( c_settingAutoStart, false ) );
 	m_pairingChk->setChecked( settings.getBoolValue( c_settingPairing, true ) );
+	m_discoverChk->setChecked( settings.getBoolValue( c_settingDiscover, true ) );
 
 	if ( m_autoStartChk->isChecked() && !Server::instance()->isListening() )
 	{
@@ -128,6 +137,7 @@ void DzVrBridgePane::saveSettings( DzPaneSettings &settings ) const
 	settings.setIntValue( c_settingPort, m_portSpn->value() );
 	settings.setBoolValue( c_settingAutoStart, m_autoStartChk->isChecked() );
 	settings.setBoolValue( c_settingPairing, m_pairingChk->isChecked() );
+	settings.setBoolValue( c_settingDiscover, m_discoverChk->isChecked() );
 }
 
 void DzVrBridgePane::toggleServer()
@@ -140,6 +150,7 @@ void DzVrBridgePane::toggleServer()
 	}
 
 	server->setPairingRequired( m_pairingChk->isChecked() );
+	server->setDiscoverable( m_discoverChk->isChecked() );
 	QString error;
 	if ( !server->start( quint16( m_portSpn->value() ), &error ) )
 	{

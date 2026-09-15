@@ -5,11 +5,14 @@
 #include <QFileInfo>
 #include <QHostAddress>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QNetworkInterface>
 #include <QRandomGenerator>
 #include <QStringBuilder>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QUdpSocket>
+#include <QHostInfo>
 #include <QTimer>
 #include <QUuid>
 
@@ -151,6 +154,7 @@ bool Server::start( quint16 port, QString* errorOut )
 	}
 
 	regeneratePairingCode();
+	openBeacon();
 	log( QString( "Listening on port %1 (pairing code %2)" ).arg( m_server->serverPort() ).arg( m_pairingCode ) );
 	emit listeningChanged( true );
 	return true;
@@ -164,6 +168,7 @@ void Server::stop()
 	}
 
 	m_server->close();
+	closeBeacon();
 
 	const QList<QTcpSocket*> sockets = m_connections.keys();
 	for ( QTcpSocket* socket : sockets )
@@ -365,6 +370,84 @@ void Server::handleFrame( Connection &c, const Frame &f )
 	}
 
 	sendError( c, f, "unknown_type", "unknown message type '" % type % "'" );
+}
+
+// Finding the plugin without being told where it is.
+//
+// The headset broadcasts one short line and every plugin that hears it answers with
+// its address, its port and whether it will want a pairing code. Answering a probe
+// rather than shouting a beacon means an idle Daz puts nothing on the network at
+// all, and a machine that should not be found simply does not answer.
+void Server::openBeacon()
+{
+	closeBeacon();
+	if ( !m_discoverable || !m_server )
+	{
+		return;
+	}
+	m_beacon = new QUdpSocket( this );
+	// ShareAddress: several Daz instances on one machine may all want to answer.
+	if ( !m_beacon->bind( QHostAddress::AnyIPv4, port(),
+			QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint ) )
+	{
+		log( "Discovery: could not bind UDP " % QString::number( port() ) % "; the headset will need the address typed in" );
+		delete m_beacon;
+		m_beacon = nullptr;
+		return;
+	}
+	connect( m_beacon, &QUdpSocket::readyRead, this, &Server::onProbe );
+}
+
+void Server::closeBeacon()
+{
+	if ( !m_beacon )
+	{
+		return;
+	}
+	m_beacon->close();
+	m_beacon->deleteLater();
+	m_beacon = nullptr;
+}
+
+void Server::setDiscoverable( bool on )
+{
+	if ( m_discoverable == on )
+	{
+		return;
+	}
+	m_discoverable = on;
+	if ( isListening() )
+	{
+		on ? openBeacon() : closeBeacon();
+	}
+}
+
+void Server::onProbe()
+{
+	while ( m_beacon && m_beacon->hasPendingDatagrams() )
+	{
+		QByteArray datagram;
+		datagram.resize( int( m_beacon->pendingDatagramSize() ) );
+		QHostAddress from;
+		quint16 fromPort = 0;
+		m_beacon->readDatagram( datagram.data(), datagram.size(), &from, &fromPort );
+		if ( !datagram.startsWith( "DAZVRBRIDGE?1" ) )
+		{
+			continue;
+		}
+
+		QJsonObject o;
+		o[ "host" ] = QHostInfo::localHostName();
+		o[ "port" ] = int( port() );
+		o[ "plugin" ] = pluginVersionString();
+		o[ "protocol" ] = kProtocolVersion;
+		o[ "pairing" ] = m_pairingRequired;
+		o[ "scene" ] = QFileInfo( dzScene->getFilename() ).completeBaseName();
+		o[ "clients" ] = m_connections.size();
+		const QByteArray reply = QByteArray( "DAZVRBRIDGE!1 " ) +
+			QJsonDocument( o ).toJson( QJsonDocument::Compact );
+		m_beacon->writeDatagram( reply, from, fromPort );
+	}
 }
 
 void Server::handleHello( Connection &c, const Frame &f )

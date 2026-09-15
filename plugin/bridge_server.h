@@ -17,6 +17,7 @@
 
 class DzSkeleton;
 class QTcpServer;
+class QUdpSocket;
 class QTcpSocket;
 class QTimer;
 
@@ -32,6 +33,11 @@ public:
 	void	stop();
 	bool	isListening() const;
 	quint16	port() const;
+
+	// Answers UDP probes so a headset can find this machine without being told
+	// its address. Off means the port only exists for those who already know.
+	void	setDiscoverable( bool on );
+	bool	discoverable() const { return m_discoverable; }
 
 	// Six-digit code a client on another machine must send in hello.
 	// Regenerated on every start(). Loopback clients never need it.
@@ -62,6 +68,9 @@ private:
 	};
 
 	void	onNewConnection();
+	void	onProbe();
+	void	openBeacon();
+	void	closeBeacon();
 	void	onReadyRead( QTcpSocket* socket );
 	void	onDisconnected( QTcpSocket* socket );
 
@@ -96,6 +105,8 @@ private:
 	void	log( const QString &line );
 
 	QTcpServer*						m_server = nullptr;
+	QUdpSocket*						m_beacon = nullptr;		// answers "who is out there"
+	bool							m_discoverable = true;
 	QHash<QTcpSocket*, Connection>	m_connections;
 	QHash<QString, BakedAsset>		m_assets;	// last bake, by content hash
 	PoseWatcher*					m_poseWatcher = nullptr;

@@ -54,6 +54,17 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `node.delete` | control | `node` — removes a node from the scene, as one undo step. Not for bones. → `node.result`, and the node-list change brings a `scene.changed` of its own. | **Phase 4 ✓** |
 | `pose.preview` | control | `figure, bones` | **reserved, v2** — v1 plugin answers `error deferred_v2` |
 
+## Discovery (UDP, same port number)
+
+A client that does not know where Daz is broadcasts the ASCII line `DAZVRBRIDGE?1` to UDP `<port>`; every
+plugin that is listening and discoverable answers, unicast, with `DAZVRBRIDGE!1 ` followed by a compact JSON
+object: `{ host, port, plugin, protocol, pairing, scene, clients }`. The answer's **sender address** is what
+the client dials — `host` is the machine's name, for the list, and a name that does not resolve is worse than
+useless when the point is to save someone typing an address.
+
+Probes, not beacons: an idle Daz puts nothing on the network until somebody is looking. The pane's *Answer
+discovery probes* switch turns it off, and then the port only exists for those who already know.
+
 ## Messages · plugin → client
 
 | Type | Conn | Fields | Status |

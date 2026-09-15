@@ -39,6 +39,11 @@ CMake tree so it inherits the `dzcore` target, Qt setup and compiler flags.
 
 ## Getting connected
 
+The setup screen finds Daz by itself: it broadcasts on the LAN every couple of seconds and lists whatever
+answers, by machine name and open scene. One answer fills the address in; two or more and the choice is yours,
+because guessing which Daz someone meant is how a scene gets posed on the wrong machine. Typing an address by
+hand turns the filling-in off. Daz answers only when asked, and the pane can stop it answering at all.
+
 The setup screen is on the monitor, not in the headset: a host address and a six-digit pairing code are
 typed, and this machine has a keyboard attached to it already. It carries the connection details and the
 options that decide what gets baked -- textures, texture size, bones per vertex, strand-hair approximation,

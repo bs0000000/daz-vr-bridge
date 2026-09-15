@@ -32,6 +32,7 @@ private:
 	QPushButton*	m_startBtn = nullptr;
 	QCheckBox*		m_autoStartChk = nullptr;
 	QCheckBox*		m_pairingChk = nullptr;
+	QCheckBox*		m_discoverChk = nullptr;
 	QLabel*			m_statusLbl = nullptr;
 	QLabel*			m_addressLbl = nullptr;
 	QLabel*			m_codeLbl = nullptr;

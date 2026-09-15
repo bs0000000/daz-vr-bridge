@@ -39,11 +39,16 @@ namespace DazVrBridge
 
         Canvas _canvas;
         TMP_InputField _host, _port, _code, _texMax, _region;
-        TMP_Dropdown _textures, _influences;
+        TMP_Dropdown _textures, _influences, _found;
+        LanDiscovery _discovery;
+        int _foundRevision = -1;
+        float _nextProbe;
         Toggle _hulls;
         TextMeshProUGUI _status;
         Button _connect;
         bool _everConnected;
+        bool _touchedHost;      // typed an address: stop filling it in from discovery
+        LanDiscovery.Found _picked;
 
         static readonly Color Ground = new Color(0.062f, 0.078f, 0.098f, 1f);
         static readonly Color Panel = new Color(0.098f, 0.121f, 0.149f, 1f);
@@ -59,8 +64,15 @@ namespace DazVrBridge
             Load();
             Build();
             if (session) session.ControlState += _ => Refresh();
+            _discovery = new LanDiscovery();
+            _discovery.Start(session ? session.port : BridgeFrame.DefaultPort);
             Refresh();
             if (autoConnect) Apply();
+        }
+
+        void OnDestroy()
+        {
+            _discovery?.Dispose();
         }
 
         void Update()
@@ -71,7 +83,53 @@ namespace DazVrBridge
             var connected = session && session.ControlReady && loader && loader.Figures.Count > 0;
             if (connected) _everConnected = true;
             _canvas.gameObject.SetActive(!connected);
-            if (!connected) Refresh();
+            if (connected) return;
+            Refresh();
+            Look();
+        }
+
+        // ---- who is out there
+        //
+        // Nobody should have to read an IP address off another machine's screen to use
+        // this. One broadcast every couple of seconds while this screen is up, and every
+        // Daz that is listening puts itself in the list.
+        void Look()
+        {
+            if (_discovery == null) return;
+            if (Time.unscaledTime >= _nextProbe)
+            {
+                _nextProbe = Time.unscaledTime + 2f;
+                _discovery.Ask(int.TryParse(_port.text, out var port) ? port : BridgeFrame.DefaultPort);
+            }
+            _discovery.Poll();
+            if (_discovery.Revision == _foundRevision) return;
+            _foundRevision = _discovery.Revision;
+
+            _found.ClearOptions();
+            var servers = _discovery.Servers;
+            if (servers.Count == 0)
+            {
+                _found.options.Add(new TMP_Dropdown.OptionData("looking..."));
+            }
+            else
+            {
+                foreach (var server in servers)
+                    _found.options.Add(new TMP_Dropdown.OptionData(server.Label));
+            }
+            _found.SetValueWithoutNotify(0);
+            _found.RefreshShownValue();
+
+            // One answer and there is nothing to choose between: fill it in. Two or more
+            // and the choice is the user's, because guessing which Daz they meant is how
+            // someone ends up posing a scene on the wrong machine.
+            if (servers.Count == 1 && !_touchedHost) Take(servers[0]);
+        }
+
+        void Take(LanDiscovery.Found server)
+        {
+            _host.SetTextWithoutNotify(server.Address);
+            _port.SetTextWithoutNotify(server.Port.ToString());
+            _picked = server;
         }
 
         // ---- settings
@@ -160,7 +218,12 @@ namespace DazVrBridge
                     Set(new Color(1f, 0.45f, 0.4f), $"{why}\n{hint}".Trim());
                     break;
                 default:
-                    Set(Muted, _everConnected ? "Disconnected. Retrying." : "Ready. Press Connect.");
+                    if (_everConnected) Set(Muted, "Disconnected. Retrying.");
+                    else if (_picked != null)
+                        Set(Muted, _picked.Pairing
+                            ? $"{_picked.Label} is listening, and wants its pairing code."
+                            : $"{_picked.Label} is listening. No code needed.");
+                    else Set(Muted, "Ready. Press Connect.");
                     break;
             }
             if (_connect) _connect.interactable = state != BridgeClient.State.Connecting;
@@ -199,7 +262,15 @@ namespace DazVrBridge
             Heading(panel, "Daz VR Bridge");
             Caption(panel, "The plugin's pane in Daz shows the address and the pairing code.");
 
+            _found = Dropdown(panel, "Found on the network", new[] { "looking..." }, 0);
+            _found.onValueChanged.AddListener(index =>
+            {
+                if (_discovery != null && index >= 0 && index < _discovery.Servers.Count)
+                    Take(_discovery.Servers[index]);
+            });
+
             _host = Field(panel, "Daz machine", session ? session.host : "127.0.0.1");
+            _host.onValueChanged.AddListener(_ => _touchedHost = true);
             _port = Field(panel, "Port", (session ? session.port : BridgeFrame.DefaultPort).ToString());
             _code = Field(panel, "Pairing code", session ? session.pairingCode : "", "six digits; not needed on this machine");
 
