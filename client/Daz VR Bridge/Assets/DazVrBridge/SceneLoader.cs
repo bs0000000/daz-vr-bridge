@@ -415,6 +415,12 @@ namespace DazVrBridge
                     go.AddComponent<NodeHandle>().Init(Nodes[id], go.transform.Find("body").GetComponent<Collider>());
                 }
 
+                // Hidden at the desk means hidden here. Only props, cameras and lights:
+                // a figure that is hidden in Daz is still a figure someone may be posing,
+                // and its handles are the point of being in the headset at all.
+                if (type != "figure" && type != "follower" && n.Value<bool?>("visible") == false)
+                    SetNodeVisible(Nodes[id], false);
+
                 // A prop parented to a bone (held in a hand) follows that bone.
                 var parentBone = n.Value<string>("parent_bone");
                 var parentNode = n.Value<string>("parent");
@@ -584,6 +590,20 @@ namespace DazVrBridge
         }
 
         // node.state -> place a node from its Daz world transform (and lens for cameras).
+        /// Shows or hides one node here. Renderers and colliders, not the GameObject:
+        /// the handle that is showing you the panel lives on it and has to survive being
+        /// told to disappear. Daz is told separately, by whoever called this.
+        public static void SetNodeVisible(LoadedNode node, bool visible)
+        {
+            if (node == null || !node.Go) return;
+            foreach (var r in node.Go.GetComponentsInChildren<Renderer>(true)) r.enabled = visible;
+            foreach (var c in node.Go.GetComponentsInChildren<Collider>(true)) c.enabled = visible;
+            if (node.Json != null) node.Json["visible"] = visible;
+        }
+
+        public static bool IsNodeVisible(LoadedNode node) =>
+            node?.Json == null || node.Json.Value<bool?>("visible") != false;
+
         public void ApplyNodeState(LoadedNode node, JObject header)
         {
             var transform = (JObject)header["transform"];

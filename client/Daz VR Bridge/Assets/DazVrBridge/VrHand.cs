@@ -44,9 +44,17 @@ namespace DazVrBridge
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetInteraction() { HapticGain = 1f; UiBlocked = false; _heldCount = 0; AnyHolding = false; _backgroundReady = false; }
         public bool TriggerPressed => IsTracked && _monTrigger.WasPressedThisFrame();
+        public bool TriggerHeld => IsTracked && _monTrigger.IsPressed();
         public bool HoldingSomething => _grabbed != null;
+        /// What this hand holds, and what it would take if the trigger were pulled now.
+        public IGrabbable Held => _grabbed;
+        public IGrabbable Hover => _hover;
+        /// Set each frame by a panel under this hand's pointer: the trigger belongs to
+        /// the panel then, not to whatever happens to be behind it.
+        public bool PointerBlocked { get; set; }
 
         InputAction _position, _rotation, _grab, _world, _isTracked, _trackingState;
+        InputAction _aimPosition, _aimRotation;   // the pointer pose, for aiming at a panel
         InputAction _monTrigger, _monGrip, _monPrimary, _monSecondary; // button monitor for the HUD
         GameObject _vis;
         Renderer _visRenderer;
@@ -71,6 +79,11 @@ namespace DazVrBridge
             _rotation = new InputAction($"{hand}/rotation", binding: $"<XRController>{{{hand}}}/deviceRotation");
             _isTracked = new InputAction($"{hand}/isTracked", InputActionType.Button, $"<XRController>{{{hand}}}/isTracked");
             _trackingState = new InputAction($"{hand}/trackingState", InputActionType.Value, $"<XRController>{{{hand}}}/trackingState");
+            // The AIM pose, which is not the grip pose: a controller's handle points down
+            // and inboard of where its owner thinks they are pointing, and every runtime
+            // publishes a separate pose for pointing precisely because of that.
+            _aimPosition = new InputAction($"{hand}/aimPosition", binding: $"<XRController>{{{hand}}}/pointerPosition");
+            _aimRotation = new InputAction($"{hand}/aimRotation", binding: $"<XRController>{{{hand}}}/pointerRotation");
             _grab = ButtonAction($"{hand}/grab", hand, grabButton);
             _world = ButtonAction($"{hand}/world", hand, worldButton);
 
@@ -154,7 +167,7 @@ namespace DazVrBridge
             return a;
         }
 
-        InputAction[] AllActions() => new[] { _position, _rotation, _grab, _world, _isTracked, _trackingState, _monTrigger, _monGrip, _monPrimary, _monSecondary };
+        InputAction[] AllActions() => new[] { _position, _rotation, _aimPosition, _aimRotation, _grab, _world, _isTracked, _trackingState, _monTrigger, _monGrip, _monPrimary, _monSecondary };
 
         void SetVisAlpha(float a)
         {
@@ -205,6 +218,25 @@ namespace DazVrBridge
             return $"trig={(_monTrigger.IsPressed() ? 1 : 0)} grip={(_monGrip.IsPressed() ? 1 : 0)} A/X={(_monPrimary.IsPressed() ? 1 : 0)} B/Y={(_monSecondary.IsPressed() ? 1 : 0)}{track}";
         }
 
+        /// Where this hand points, in world space. The runtime's pointer pose when it has
+        /// one, the device pose when it does not (some profiles publish only the grip).
+        public bool AimRay(out Ray ray)
+        {
+            var parent = transform.parent;
+            if (parent && _aimPosition.controls.Count > 0 && _aimRotation.controls.Count > 0)
+            {
+                var rot = _aimRotation.ReadValue<Quaternion>();
+                if (rot.x != 0f || rot.y != 0f || rot.z != 0f || rot.w != 0f)
+                {
+                    var world = parent.rotation * rot;
+                    ray = new Ray(parent.TransformPoint(_aimPosition.ReadValue<Vector3>()), world * Vector3.forward);
+                    return IsTracked;
+                }
+            }
+            ray = new Ray(transform.position, transform.forward);
+            return IsTracked;
+        }
+
         void Update()
         {
             // Bound controls exist iff a controller for this hand is connected.
@@ -246,7 +278,7 @@ namespace DazVrBridge
                 return;
             }
 
-            if (UiBlocked || (_loader && _loader.Busy) || !IsTracked || WorldGrab) { ClearHover(); return; } // world grab has priority
+            if (UiBlocked || PointerBlocked || (_loader && _loader.Busy) || !IsTracked || WorldGrab) { ClearHover(); return; } // world grab has priority
             UpdateHover();
             if (_hover != null && _grab.WasPressedThisFrame()) Grab(_hover);
         }

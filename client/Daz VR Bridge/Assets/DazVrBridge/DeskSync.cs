@@ -94,6 +94,30 @@ namespace DazVrBridge
             foreach (var node in loader.Nodes.Values) Resync(node);
         }
 
+        // ---- hide and delete
+        //
+        // Both are real edits in Daz, and both are one step on its undo stack, which is
+        // what makes them safe to offer from inside a headset: the left hand takes either
+        // of them back without anyone reaching for a keyboard.
+
+        /// Hides or shows a node here and at the desk.
+        public void SetVisible(SceneLoader.LoadedNode node, bool visible)
+        {
+            if (node == null) return;
+            SceneLoader.SetNodeVisible(node, visible);
+            if (!session || !session.ControlReady) return;
+            session.SendControl(new JObject { ["t"] = "node.visible", ["node"] = node.Id, ["visible"] = visible });
+        }
+
+        /// Deletes a node in Daz. Nothing is removed here by hand: deleting changes the
+        /// node list, and the scene.changed that follows brings back a scene without it
+        /// through the path every other desk-side change already uses.
+        public void Delete(SceneLoader.LoadedNode node)
+        {
+            if (node == null || !session || !session.ControlReady) return;
+            session.SendControl(new JObject { ["t"] = "node.delete", ["node"] = node.Id });
+        }
+
         // ---- render
 
         public void Render(string cameraId)

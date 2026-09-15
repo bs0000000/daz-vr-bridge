@@ -54,6 +54,8 @@ namespace DazVrBridge
             if (!FindAnyObjectByType<BindingLabels>()) gameObject.AddComponent<BindingLabels>();
             if (!FindAnyObjectByType<PoseTakes>()) gameObject.AddComponent<PoseTakes>();
             if (!FindAnyObjectByType<VrMenu>()) gameObject.AddComponent<VrMenu>();
+            if (!FindAnyObjectByType<VrPanel>()) gameObject.AddComponent<VrPanel>();
+            if (!FindAnyObjectByType<PanelMenu>()) gameObject.AddComponent<PanelMenu>();
         }
 
         void Start()

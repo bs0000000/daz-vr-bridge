@@ -50,6 +50,8 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `render.begin` | control | `camera?` — points Daz's active viewport at that camera and starts a render, since `doRender` renders the view. Refused with `busy` if one is already running. | **Phase 4 ✓** |
 | `node.transform` | control | `node, pos[3] cm, rot[4] (Daz sense, world), commit, label` — applied via `setWSPos`/`setWSRot`; scale untouched; `commit:false` applies without an undo entry. Not for bones. | **Phase 3 ✓** |
 | `camera.set` | control | `camera, pos, rot, focal_mm, commit, label` — as above plus `setFocalLength` | **Phase 3 ✓** |
+| `node.visible` | control | `node, visible` — hides or shows a node at the desk, as one undo step. Not for bones. → `node.result` | **Phase 4 ✓** |
+| `node.delete` | control | `node` — removes a node from the scene, as one undo step. Not for bones. → `node.result`, and the node-list change brings a `scene.changed` of its own. | **Phase 4 ✓** |
 | `pose.preview` | control | `figure, bones` | **reserved, v2** — v1 plugin answers `error deferred_v2` |
 
 ## Messages · plugin → client
@@ -68,6 +70,7 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `asset.data` | bulk | `hash, kind, size` + payload | **Phase 1b ✓** (unknown hash → `error asset_unknown` with `hash`; a texture that cannot be produced → `asset_failed`) |
 | `pose.state` | control | `figure, bones: [ { id, ws: { pos, rot } } ], selftest?` — every bone's Daz world transform. Sent whenever any bone of that figure moves (debounced 100 ms), after a `pose.commit`, and for `selftest.begin`. | **Phase 2a ✓** |
 | `selftest.result` | control | `figure, pass, bones, max_error_deg, worst, error?` | **Phase 2a ✓** (pass = every Euler control back within 0.01°) |
+| `node.result` | control | `node, action: visible\|delete, ok` — the answer to `node.visible` / `node.delete` | **Phase 4 ✓** |
 | `node.state` | control | `node, transform: { pos, rot, scale }, focal_mm?` — any prop/camera/light moved at the desk (debounced 100 ms) and the confirmation after `node.transform`/`camera.set` | **Phase 3 ✓** |
 
 ## Manifest (`scene.manifest.manifest`)

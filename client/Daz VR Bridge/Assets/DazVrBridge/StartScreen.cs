@@ -98,6 +98,14 @@ namespace DazVrBridge
                 PlayerPrefs.SetInt(Prefix + "port", session.port);
                 PlayerPrefs.SetString(Prefix + "code", session.pairingCode);
             }
+            Remember(loader);
+        }
+
+        /// The bake options, written where this screen will read them next time. Public
+        /// because the in-VR panel sets the same five things, and a texture size chosen
+        /// in the headset should still be there when the app is started from the desk.
+        public static void Remember(SceneLoader loader)
+        {
             if (loader)
             {
                 PlayerPrefs.SetString(Prefix + "textures", loader.textures);

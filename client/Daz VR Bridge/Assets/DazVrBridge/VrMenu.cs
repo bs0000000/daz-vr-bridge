@@ -70,6 +70,7 @@ namespace DazVrBridge
         PoseSync _poses;
         PoseTakes _takes;
         DeskSync _desk;
+        PanelMenu _panel;
         int _page;
 
         const float ChipWidth = 11f;
@@ -119,6 +120,7 @@ namespace DazVrBridge
             _poses = FindAnyObjectByType<PoseSync>();
             _takes = FindAnyObjectByType<PoseTakes>();
             _desk = FindAnyObjectByType<DeskSync>();
+            _panel = FindAnyObjectByType<PanelMenu>();
             BuildPages();
             LoadSettings();
             BuildVisuals();
@@ -196,12 +198,15 @@ namespace DazVrBridge
                 Run = () => _takes?.Capture(),
                 Enabled = () => _takes && _takes.CanCapture,
             };
-            // The tutorial, without a tutorial: what each button does, where the button is.
+            // A door to the panel, where the things that have to be READ now live --
+            // including the list of what every button does, which was a toggle in this
+            // slot and which nobody could find, because finding it meant already knowing
+            // what the wheel said.
             session[2] = new Entry
             {
-                Label = "Buttons", Kind = Kind.Toggle,
-                Get = () => BindingLabels.Show,
-                Set = v => BindingLabels.Show = v,
+                Label = "Panel", Kind = Kind.Action,
+                Run = () => _panel?.OpenSession(),
+                Enabled = () => _panel,
             };
             session[3] = new Entry
             {
@@ -550,6 +555,10 @@ namespace DazVrBridge
         }
 
         static bool Read(string key, bool fallback) => PlayerPrefs.GetInt(Prefix + key, fallback ? 1 : 0) != 0;
+
+        /// The panel changes the same settings this wheel does, and they are remembered
+        /// in the same place, because they are the same settings.
+        public void Persist() { SaveSettings(); }
 
         void SaveSettings()
         {

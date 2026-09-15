@@ -124,8 +124,13 @@ namespace DazVrBridge
         {
             var go = new GameObject(name);
             var t = go.AddComponent<TextMeshPro>();
-            t.rectTransform.sizeDelta = new Vector2(0.34f, 0.12f);
-            t.fontSize = 0.022f;
+            t.rectTransform.sizeDelta = new Vector2(0.34f, 0.13f);
+            // Sized by its box, not by a font size in units nobody can predict: the first
+            // version picked 0.022 and produced text too small to find, which is the same
+            // mistake the wheel made and the same fix.
+            t.enableAutoSizing = true;
+            t.fontSizeMin = 0.001f;
+            t.fontSizeMax = 300f;
             t.textWrappingMode = TextWrappingModes.NoWrap;
             t.color = Color.white;
             t.lineSpacing = 8f;
@@ -135,6 +140,20 @@ namespace DazVrBridge
             if (material.HasProperty(zTest))
                 material.SetFloat(zTest, (float)UnityEngine.Rendering.CompareFunction.Always);
             material.renderQueue = 4000;
+
+            // A ground to read them against: white text over a lit figure is white text
+            // over whatever the figure happens to be wearing.
+            var back = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            back.name = "ground";
+            Destroy(back.GetComponent<Collider>());
+            back.transform.SetParent(go.transform, false);
+            back.transform.localPosition = new Vector3(0f, 0f, 0.002f);
+            back.transform.localScale = new Vector3(0.36f, 0.15f, 1f);
+            var backRenderer = back.GetComponent<Renderer>();
+            backRenderer.sharedMaterial = BoneHandle.OverlayMaterial();
+            var block = new MaterialPropertyBlock();
+            block.SetColor("_BaseColor", new Color(0.05f, 0.07f, 0.10f, 0.72f));
+            backRenderer.SetPropertyBlock(block);
             return t;
         }
 

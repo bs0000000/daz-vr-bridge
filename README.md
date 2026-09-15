@@ -45,7 +45,10 @@ options that decide what gets baked -- textures, texture size, bones per vertex,
 and the region radius -- which are deliberately *not* on the wheel: everything there is live, while these
 cost a full re-bake and re-download, and sitting beside a Connect button says so. Settings are remembered.
 
-The screen gets out of the way once a scene is up, and comes back if the connection drops.
+The screen waits for Connect rather than dialling on its own: a setup screen that connects before anyone has
+read it is not a setup screen. It gets out of the way once a scene is up, and comes back if the connection
+drops. The same five bake options are on the panel's Scene tab in the headset, so a texture size can be
+changed without going back to the desk.
 
 ## VR controls
 
@@ -61,6 +64,8 @@ The screen gets out of the way once a scene is up, and comes back if the connect
   A ring at the hand fills while the hold charges -- anticlockwise amber for undo, clockwise green for redo --
   and flashes on each step it takes.
 - **A/X held while dragging a bone:** pass straight through props and bodies. Contact is an aid, not a law.
+- **Right A/X, empty hand:** the panel, about whatever you are pointing at -- a prop, a camera, a bone -- or
+  about the session when you are pointing at nothing. Press again to put it away.
 - **Right B/Y held:** the settings wheel, anchored where your hand was when you pressed. Move the hand toward a
   chip to highlight it, release to apply, release in the middle to cancel. Posing and world movement pause while
   it is open.
@@ -70,15 +75,40 @@ rather than the word ON, and continuous settings dialled by pushing the hand fur
 every 5% and the value applied live. Page one holds what you reach for mid-pose (undo, redo, prop snapping,
 figure contact, joint clamping, limit rods, scene reload); page two the things you set once (contact gap,
 clavicle share, handle reveal distance, haptic strength, forearm roll assist, contact shapes, life-size reset);
-page three the session: draft mode, Take, button labels, Render, and an arc of three slots to recall a take
+page three the session: draft mode, Take, the panel, Render, and an arc of three slots to recall a take
 from. Settings are saved locally.
+
+## The panel
+
+The wheel is proprioception: eight fixed directions, learned once, used without looking. That is right for
+what you reach for in the middle of a pose and wrong for everything that has to be *read*, which is what the
+panel is for -- which object this is, how big its textures are, what this button is about to delete.
+
+Press A with an empty hand and a board appears at arm's length, off to the side of whatever it is about so the
+subject stays in view. Point at it with the controller's aim pose and pull the trigger; sliders drag, and a
+choice steps forward or back depending on which half of the readout you click. It hangs from its top edge, so
+switching tab never moves the title out from under the cursor, and it comes back in front of you if you walk
+off or turn around.
+
+Pointing at a scene object opens that object's panel: select it in Daz, resync it, walk over to it, hide it,
+delete it (twice, and Daz's undo covers it). A camera also gets **Render** and a **focal length** slider --
+which is the point, because taking a render used to mean holding the camera steady in one hand while flicking
+a wheel with the other. Frame the shot, let go, press the button; the lens is sent once, when the drag ends,
+rather than forty times on the way there.
+
+Pointing at nothing opens the session panel: **Contact** (snapping, body contact, joint limits, contact
+shapes), **Session** (draft, haptics, life size, resync, rebuild, takes), **Scene** (textures, texture size,
+bones per vertex, strand hair, region radius -- the five that cost a re-bake, with the button that pays for
+it), and **Buttons**, which is every binding written down.
 
 **Button labels** float what each button does right now beside the controller that has it, and change with
 what the hand is holding -- the trigger reads "grab a bone or object" in space, "release to place" while
 holding, "apply, stay open" inside the wheel. Generated from the same state the bindings read, so they cannot
-go stale, and off by default because reading while posing is a nuisance.
+go stale, and off by default because reading while posing is a nuisance. The switch is on the panel's Buttons
+tab, beside the same list written out in full, which is where it can be found without knowing it exists.
 
-**Render** starts a Daz render of the camera a hand is holding. Daz refuses edits while it renders, so the
+**Render** starts a Daz render of the camera the panel is about (or, from the wheel, of the camera a hand is
+holding). Daz refuses edits while it renders, so the
 bridge drafts for the duration and commits when it finishes. **Resync** on page one asks Daz for every
 transform, which is a few hundred bytes against a re-bake's whole scene.
 

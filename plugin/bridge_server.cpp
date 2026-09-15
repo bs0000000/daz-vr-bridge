@@ -351,6 +351,12 @@ void Server::handleFrame( Connection &c, const Frame &f )
 		return;
 	}
 
+	if ( type == "node.visible" || type == "node.delete" )
+	{
+		handleNodeCommand( c, f );
+		return;
+	}
+
 	// Reserved for v2
 	if ( type == "pose.preview" )
 	{
@@ -650,6 +656,79 @@ void Server::handleNodeTransform( Connection &c, const Frame &f )
 		log( QString( "Moved node (\"%1\")" ).arg( label ) );
 	}
 	// The watcher broadcasts node.state ~100 ms later as confirmation.
+}
+
+// The two edits a panel in VR can ask for that are not a transform: hide something
+// that is standing in the way, and delete something that should not be in the scene.
+//
+// Both go onto Daz's own undo stack, which is the only reason they are safe to offer
+// from inside a headset at all: the left hand undoes either without taking it off.
+// Deleting also changes the node list, so the watcher's scene.changed follows by
+// itself and the client refetches -- nothing here has to tell it what it now has.
+void Server::handleNodeCommand( Connection &c, const Frame &f )
+{
+	if ( c.role != "control" )
+	{
+		sendError( c, f, "wrong_connection", f.type() % " belongs on the control connection" );
+		return;
+	}
+	if ( m_sceneBusy || !m_selfTest.figureId.isEmpty() || dzUndoStack->isInUndoRedo() )
+	{
+		sendError( c, f, "busy", "Daz is busy loading, testing, or undoing" );
+		return;
+	}
+
+	const QString id = f.header.value( "node" ).toString();
+	DzNode* node = findNodeById( id );
+	if ( !node )
+	{
+		sendError( c, f, "unknown_node", "no such node: " % id );
+		return;
+	}
+	if ( qobject_cast<DzBone*>( node ) )
+	{
+		sendError( c, f, "bad_target", "a bone is part of its figure, not a node of its own" );
+		return;
+	}
+
+	const bool remove = f.type() == "node.delete";
+	const QString label = node->getLabel();
+	bool ok = true;
+
+	if ( remove )
+	{
+		DzUndoStackHold hold;
+		ok = dzScene->removeNode( node );
+		if ( ok )
+		{
+			hold.accept( "VR delete: " % label );
+		}
+		else
+		{
+			hold.cancel();
+		}
+	}
+	else
+	{
+		const bool visible = f.header.value( "visible" ).toBool( true );
+		DzUndoStackHold hold;
+		node->setVisible( visible );
+		hold.accept( ( visible ? "VR show: " : "VR hide: " ) % label );
+	}
+
+	QJsonObject h;
+	h[ "t" ] = "node.result";
+	h[ "seq" ] = m_seq++;
+	h[ "ref_seq" ] = f.seq();
+	h[ "node" ] = id;
+	h[ "action" ] = remove ? "delete" : "visible";
+	h[ "ok" ] = ok;
+	send( c.socket, h );
+
+	log( QString( "%1 from VR: %2%3" ).arg(
+		remove ? "Delete" : "Visibility",
+		label,
+		ok ? QString() : QString( " (refused)" ) ) );
 }
 
 // Undo and redo are Daz's own stack, not a VR-only one: the step this pops is the
