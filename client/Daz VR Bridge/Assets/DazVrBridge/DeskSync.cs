@@ -142,8 +142,22 @@ namespace DazVrBridge
             return null;
         }
 
+        // Daz can refuse either of these -- a node that is gone, a scene mid-load. Put the
+        // local side back when it does, rather than leave the headset showing an edit that
+        // never happened.
+        void OnNodeResult(BridgeFrame f)
+        {
+            if (f.Header.Value<bool?>("ok") ?? false) return;
+            var id = f.Header.Value<string>("node");
+            var action = f.Header.Value<string>("action");
+            Debug.LogWarning($"[DazVrBridge] Daz refused {action} on {id}");
+            if (action == "visible" && loader != null && loader.Nodes.TryGetValue(id, out var node))
+                SceneLoader.SetNodeVisible(node, !SceneLoader.IsNodeVisible(node));
+        }
+
         void OnFrame(BridgeFrame f)
         {
+            if (f.Type == "node.result") { OnNodeResult(f); return; }
             if (f.Type != "render.state") return;
             var rendering = f.Header.Value<bool?>("rendering") ?? false;
             if (rendering == Rendering) return;
