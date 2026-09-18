@@ -172,6 +172,19 @@ namespace DazVrBridge
             if (_root) _root.gameObject.SetActive(false);
         }
 
+        /// Opens a tab by name, for somewhere else in the app that knows where it is
+        /// sending you -- a figure's panel handing over to the takes.
+        public void ShowTab(string label)
+        {
+            for (var i = 0; i < _tabs.Count; i++)
+            {
+                if (_tabs[i].Label != label) continue;
+                _tab = i;
+                Rebuild();
+                return;
+            }
+        }
+
         /// Re-asks the current tab for its rows. Cheap, and the only way a panel whose
         /// contents depend on state (a camera gains a Render row) stays honest.
         public void Rebuild()

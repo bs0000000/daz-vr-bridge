@@ -5,9 +5,16 @@
 // copy of data the client is holding anyway. Then, at the end, walk back through what
 // you caught, recall the ones worth keeping, and export those to Daz as pose presets.
 //
-// A take is scene-level, not per-figure. Multi-figure is the point of this tool, and a
-// pose of one character out of five is not a pose of the scene -- it would recall an arm
-// into a chair that has since moved.
+// Selection decides the scope, and getting that wrong was this feature's first mistake.
+// Every take used to be the whole scene, always -- so catching one character you had just
+// posed swept up four you had not, and putting that one back moved the others. Now:
+//
+//   a character is selected   save THAT character, restore a take onto it alone
+//   nothing is selected       choose who goes in, all of them by default
+//
+// A whole-scene take still carries the props, because a hand resting on a chair is only a
+// pose while the chair is where it was. A one-character take does not: a chair is not part
+// of anybody's pose.
 //
 // They live on disk now, filed under the Daz scene they were taken in, because a
 // photoshoot that ends when the headset comes off is a photoshoot nobody can use. A take
@@ -44,6 +51,8 @@ namespace DazVrBridge
             public string Name = "";
             public string Scene = "";       // the Daz scene it was taken in
             public long Stamp;              // unix seconds
+            /// Who this take is of, when it is of one character. Empty means the scene.
+            public string Subject = "";
             internal readonly Dictionary<string, FigurePose> Figures = new Dictionary<string, FigurePose>();
             internal readonly Dictionary<string, (Vector3 pos, Quaternion rot)> Nodes =
                 new Dictionary<string, (Vector3, Quaternion)>();
@@ -59,6 +68,15 @@ namespace DazVrBridge
                     return local.ToString("HH:mm");
                 }
             }
+
+            /// What it is of, for the list: a name where it is one character, a count
+            /// where it is several. "3 figures" and "Nadine" are both answers; "a take"
+            /// is not.
+            public string Of => !string.IsNullOrEmpty(Subject)
+                ? Subject
+                : FigureCount + (FigureCount == 1 ? " figure" : " figures");
+
+            public bool Holds(string figureId) => Figures.ContainsKey(figureId);
         }
 
         readonly List<Take> _takes = new List<Take>();
@@ -101,10 +119,12 @@ namespace DazVrBridge
         /// The wheel's slots count back from the newest: slot 0 is the last take made.
         public int SlotToIndex(int slot) => _takes.Count - 1 - slot;
 
-        /// Stores the scene. Returns the new take's index, or -1.
-        public int Capture()
+        /// Stores a pose. `only` names the figures to include; null or empty means every
+        /// figure in the scene, and then the props they are standing on as well.
+        public int Capture(ICollection<string> only = null)
         {
             if (!CanCapture) return -1;
+            var whole = only == null || only.Count == 0;
             var take = new Take
             {
                 Scene = _scene,
@@ -114,6 +134,7 @@ namespace DazVrBridge
 
             foreach (var fig in _loader.Figures.Values)
             {
+                if (!whole && !only.Contains(fig.Id)) continue;
                 var pose = new FigurePose
                 {
                     Rotation = new Quaternion[fig.Bones.Length],
@@ -126,14 +147,21 @@ namespace DazVrBridge
                 }
                 if (pose.Root >= 0) pose.RootPosition = fig.Bones[pose.Root].position;
                 take.Figures[fig.Id] = pose;
+                if (take.Figures.Count == 1) take.Subject = fig.Label;
             }
+            if (take.Figures.Count == 0) return -1;
+            if (take.Figures.Count > 1) take.Subject = "";
 
-            // Props too: a hand resting on a chair is only a pose while the chair is
-            // where it was.
-            foreach (var pair in _loader.Nodes)
+            // Props, but only for a take of the whole scene. A hand resting on a chair is
+            // only a pose while the chair is where it was -- and a chair is not part of
+            // one character's pose, so a take of one character leaves it alone.
+            if (whole)
             {
-                var t = pair.Value.Go ? pair.Value.Go.transform : null;
-                if (t) take.Nodes[pair.Key] = (t.position, t.rotation);
+                foreach (var pair in _loader.Nodes)
+                {
+                    var t = pair.Value.Go ? pair.Value.Go.transform : null;
+                    if (t) take.Nodes[pair.Key] = (t.position, t.rotation);
+                }
             }
 
             _takes.Add(take);
@@ -142,14 +170,19 @@ namespace DazVrBridge
             return _takes.Count - 1;
         }
 
-        /// Puts the scene back the way that take had it, and tells Daz.
-        public bool Recall(int index)
+        /// Puts things back the way that take had them, and tells Daz. `onlyFigure`
+        /// restores one character out of a take that holds several and leaves the rest
+        /// -- and the props -- exactly where they are.
+        public bool Recall(int index, string onlyFigure = null)
         {
             if (index < 0 || index >= _takes.Count || !_loader || _loader.Busy) return false;
             var take = _takes[index];
+            var one = !string.IsNullOrEmpty(onlyFigure);
+            if (one && !take.Holds(onlyFigure)) return false;
 
             foreach (var pair in take.Figures)
             {
+                if (one && pair.Key != onlyFigure) continue;
                 if (!_loader.Figures.TryGetValue(pair.Key, out var fig)) continue;
                 var pose = pair.Value;
                 // A figure that has been re-rigged since is not this figure any more.
@@ -163,6 +196,8 @@ namespace DazVrBridge
                 _poses?.Commit(fig, $"VR take {take.Name}");
             }
 
+            if (one) return true;   // props are not part of one character's pose
+
             foreach (var pair in take.Nodes)
             {
                 if (!_loader.Nodes.TryGetValue(pair.Key, out var node) || !node.Go) continue;
@@ -170,6 +205,16 @@ namespace DazVrBridge
                 _nodes?.Commit(node, $"VR take {take.Name}");
             }
             return true;
+        }
+
+        /// How many takes hold this figure. What the figure's own panel needs to know
+        /// before offering to restore one onto it.
+        public int HoldingAny(string figureId)
+        {
+            if (string.IsNullOrEmpty(figureId)) return 0;
+            var count = 0;
+            foreach (var take in _takes) if (take.Holds(figureId)) count++;
+            return count;
         }
 
         public void Delete(int index)
@@ -273,6 +318,7 @@ namespace DazVrBridge
                 array.Add(new JObject
                 {
                     ["name"] = take.Name,
+                    ["subject"] = take.Subject,
                     ["stamp"] = take.Stamp,
                     ["figures"] = figures,
                     ["nodes"] = nodes,
@@ -289,6 +335,7 @@ namespace DazVrBridge
                 var take = new Take
                 {
                     Name = o.Value<string>("name") ?? "",
+                    Subject = o.Value<string>("subject") ?? "",
                     Stamp = o.Value<long?>("stamp") ?? 0,
                     Scene = _scene,
                 };

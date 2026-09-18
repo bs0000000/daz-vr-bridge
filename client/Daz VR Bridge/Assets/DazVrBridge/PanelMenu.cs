@@ -42,6 +42,9 @@ namespace DazVrBridge
         SceneLoader.LoadedFigure _figure;
         string _bone;
         int _take = -1;                       // the take whose page is open, -1 for the list
+        bool _who;                            // the Takes tab is showing the who-picker
+        string _takeFigure;                   // Takes tab reached from a figure: it acts on that one
+        readonly HashSet<string> _excluded = new HashSet<string>();   // figures left out of the next take
         VrPanel.Row _armed;                   // a Delete waiting for its second press
         float _armedUntil;
         bool _aiming;
@@ -216,6 +219,7 @@ namespace DazVrBridge
         {
             if (!_panel) return;
             _node = null; _figure = null; _bone = null;
+            ForgetTakeScope();
             var head = Camera.main;
             var at = head ? head.transform.position + head.transform.forward : Vector3.zero;
             _panel.Open("session", "Session", SessionTabs(), at, panelHand);
@@ -225,6 +229,7 @@ namespace DazVrBridge
 
         void OpenFor(VrHand hand)
         {
+            ForgetTakeScope();
             // Whatever the last aiming frame settled on -- which is what the label under
             // the cursor was showing. Picking again here would let a flick during the
             // release open a panel about something the aim never named.
@@ -371,6 +376,19 @@ namespace DazVrBridge
                     });
                 }
 
+                // Selection decides the scope: this is the selected-character half of it.
+                // Save catches this figure alone, Restore opens the takes that hold it and
+                // puts only this one back.
+                if (_figure != null)
+                {
+                    var figure = _figure;
+                    rows.Add(Button("Save this pose", () => CaptureOne(figure.Id),
+                        () => _takes && _takes.CanCapture));
+                    rows.Add(Button("Restore a pose...", () => OpenTakesFor(figure.Id),
+                        () => _takes && _takes.HoldingAny(figure.Id) > 0,
+                        () => _takes ? _takes.HoldingAny(figure.Id) + " saved" : ""));
+                }
+
                 // A figure's truth is its pose, not the one transform under its root.
                 if (_figure != null)
                     rows.Add(Button("Resync the pose", () => _desk?.Resync(_figure), () => Ready));
@@ -506,49 +524,146 @@ namespace DazVrBridge
         // The list, or one take's page. Two levels rather than one row per action per
         // take: a take has four things you might do to it, and a row can only do one.
 
+        // Nothing selected: everyone who has not been switched off in the who-picker.
         void Capture()
         {
-            var made = _takes ? _takes.Capture() : -1;
+            if (!_takes) return;
+            var made = _takes.Capture(Included());
             if (made >= 0) _panel?.Rebuild();
+        }
+
+        /// The takes tab is about everyone again, and back at its list. Called whenever
+        /// the panel is opened fresh: "restoring onto Nadine" is a mode, and a mode that
+        /// outlives the thing that started it is a trap.
+        void ForgetTakeScope()
+        {
+            _takeFigure = null;
+            _take = -1;
+            _who = false;
+        }
+
+        /// The wheel's Take chip, so a flick honours the who-picker exactly as the
+        /// panel's own button does.
+        public void CaptureNow() => Capture();
+
+        void CaptureOne(string figureId)
+        {
+            if (!_takes) return;
+            if (_takes.Capture(new[] { figureId }) >= 0) _panel?.Rebuild();
+        }
+
+        /// The figures the next scene take will hold. Null when everyone is in, which is
+        /// the default and what Capture treats as "the whole scene".
+        List<string> Included()
+        {
+            if (!_loader || _excluded.Count == 0) return null;
+            var list = new List<string>();
+            foreach (var id in _loader.Figures.Keys)
+                if (!_excluded.Contains(id)) list.Add(id);
+            return list;
+        }
+
+        void OpenTakesFor(string figureId)
+        {
+            _takeFigure = figureId;
+            _take = -1;
+            _who = false;
+            _panel.Open("session", "Session", SessionTabs(), Anchor(), panelHand);
+            _panel.ShowTab("Takes");
         }
 
         List<VrPanel.Row> TakeRows()
         {
             if (!_takes) return new List<VrPanel.Row>();
+            if (_who) return WhoRows();
             if (_take >= 0 && _take < _takes.Count) return TakePage(_takes.Takes[_take]);
             _take = -1;
 
-            var rows = new List<VrPanel.Row>
+            var rows = new List<VrPanel.Row>();
+
+            // Reached from a figure's panel, so everything here is about that figure.
+            if (!string.IsNullOrEmpty(_takeFigure))
             {
-                Button("Capture a take", Capture, () => _takes.CanCapture),
-            };
-            if (_takes.Count == 0)
+                var label = FigureLabel(_takeFigure);
+                rows.Add(Note("Restoring onto", () => label));
+                rows.Add(Button("Everyone again", () => { _takeFigure = null; _panel.Rebuild(); }));
+            }
+            else
             {
-                rows.Add(Note("Nothing captured yet", () => "they last past this session"));
-                return rows;
+                rows.Add(Button("Capture a take", Capture, () => _takes.CanCapture));
+                // Who goes in the next one. Only worth a row when there is a choice.
+                if (_loader && _loader.Figures.Count > 1)
+                    rows.Add(Button("Who is in it...", () => { _who = true; _panel.Rebuild(); },
+                        null, WhoSummary));
             }
 
+            var any = false;
             // Newest first: the one you just caught is the one you are looking for.
             var shown = 0;
-            for (var i = _takes.Count - 1; i >= 0 && shown < 8; i--, shown++)
+            for (var i = _takes.Count - 1; i >= 0 && shown < 7; i--)
             {
-                var index = i;
                 var take = _takes.Takes[i];
+                if (!string.IsNullOrEmpty(_takeFigure) && !take.Holds(_takeFigure)) continue;
+                var index = i;
+                shown++;
+                any = true;
                 rows.Add(Button(take.Name,
                     () => { _take = index; _panel.Rebuild(); },
                     null,
-                    () => take.FigureCount + (take.FigureCount == 1 ? " figure" : " figures")));
+                    () => take.Of));
             }
+            if (!any)
+                rows.Add(Note("Nothing captured yet", () => "they last past this session"));
             return rows;
         }
 
-        List<VrPanel.Row> TakePage(PoseTakes.Take take)
+        // Who the next scene take will hold. Everyone, until somebody is switched off.
+        List<VrPanel.Row> WhoRows()
         {
             var rows = new List<VrPanel.Row>
             {
+                Note("In the next take", WhoSummary),
+            };
+            if (_loader != null)
+            {
+                foreach (var pair in _loader.Figures)
+                {
+                    var id = pair.Key;
+                    var label = pair.Value.Label;
+                    if (rows.Count >= 8) break;
+                    rows.Add(new VrPanel.Row
+                    {
+                        Label = label,
+                        Kind = VrPanel.Kind.Toggle,
+                        Get = () => !_excluded.Contains(id),
+                        Set = on => { if (on) _excluded.Remove(id); else _excluded.Add(id); },
+                    });
+                }
+            }
+            rows.Add(Button("Back", () => { _who = false; _panel.Rebuild(); }));
+            return rows;
+        }
+
+        string WhoSummary()
+        {
+            if (!_loader) return "";
+            var total = _loader.Figures.Count;
+            var inside = total - _excluded.Count;
+            return inside >= total ? "everyone" : inside + " of " + total;
+        }
+
+        string FigureLabel(string id) =>
+            _loader && _loader.Figures.TryGetValue(id, out var figure) ? figure.Label : id;
+
+        List<VrPanel.Row> TakePage(PoseTakes.Take take)
+        {
+            var onto = _takeFigure;         // null when the take is being used whole
+            var rows = new List<VrPanel.Row>
+            {
                 Note("Taken at", () => take.When),
-                Note("Holds", () => take.FigureCount + (take.FigureCount == 1 ? " figure" : " figures")),
-                Button("Recall it", () => _takes.Recall(_take), () => _takes && !DeskSync.Rendering),
+                Note("Holds", () => take.Of),
+                Button(string.IsNullOrEmpty(onto) ? "Recall it" : "Recall onto " + FigureLabel(onto),
+                    () => _takes.Recall(_take, onto), () => _takes && !DeskSync.Rendering),
                 // Recall first, then export: the plugin writes whatever pose the figure
                 // is wearing, and both messages go down the same ordered connection, so
                 // what lands in the library is what this take holds.
@@ -581,12 +696,14 @@ namespace DazVrBridge
         // when it is loaded, and a file holding five characters' poses could not.
         void Export(PoseTakes.Take take)
         {
-            if (!_takes.Recall(_take)) return;
-            var many = take.FigureCount > 1;
+            var onto = _takeFigure;
+            if (!_takes.Recall(_take, onto)) return;
+            // One figure when that is the scope, otherwise everyone the take holds.
+            var many = string.IsNullOrEmpty(onto) && take.FigureCount > 1;
             foreach (var id in take.FigureIds)
             {
-                var label = _loader && _loader.Figures.TryGetValue(id, out var figure) ? figure.Label : id;
-                _desk?.ExportPose(id, many ? take.Name + " - " + label : take.Name);
+                if (!string.IsNullOrEmpty(onto) && id != onto) continue;
+                _desk?.ExportPose(id, many ? take.Name + " - " + FigureLabel(id) : take.Name);
             }
         }
 

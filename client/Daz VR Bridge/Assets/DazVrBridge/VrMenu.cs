@@ -195,7 +195,9 @@ namespace DazVrBridge
             session[1] = new Entry
             {
                 Label = "Take", Kind = Kind.Action,
-                Run = () => _takes?.Capture(),
+                // Through the panel, so a flick catches whoever the who-picker says --
+                // two surfaces onto one session, not two answers to the same question.
+                Run = () => { if (_panel) _panel.CaptureNow(); else _takes?.Capture(); },
                 Enabled = () => _takes && _takes.CanCapture,
             };
             // A door to the panel, where the things that have to be READ now live --

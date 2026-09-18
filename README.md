@@ -150,9 +150,13 @@ holding). Daz refuses edits while it renders, so the
 bridge drafts for the duration and commits when it finishes. **Resync** on page one asks Daz for every
 transform, which is a few hundred bytes against a re-bake's whole scene.
 
-**Takes** hold the whole scene's pose -- every figure, and the props they are resting on, since a hand on a
-chair is only a pose while the chair is where it was. Capture costs nothing: the data is what pose.commit
-already sends. Mimic the pose, press the button, move on.
+**Takes** are scoped by what you have selected. Point at a character and its panel offers **Save this pose**
+and **Restore a pose...**, both acting on that one figure and leaving everyone else where they are. Open the
+panel on nothing and a take holds the whole scene -- every figure, and the props they are resting on, since a
+hand on a chair is only a pose while the chair is where it was -- with a **Who is in it** picker for leaving
+somebody out. A take of one character does not carry the props: a chair is not part of anybody's pose.
+
+Capture costs nothing: the data is what pose.commit already sends. Mimic the pose, press the button, move on.
 
 They live on disk, filed under the Daz scene they were taken in, so a photoshoot does not end when the headset
 comes off; a take only ever comes back into the scene it belongs to, and a figure that has been re-rigged
