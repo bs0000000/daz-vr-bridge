@@ -6,6 +6,11 @@ and sends poses back as undo steps.
 
 Design doc: https://claude.ai/code/artifact/bd7f02aa-d311-43f6-9e9a-a20a8f9e15b9
 
+**Measured**, in a player build rather than the editor: **1.3 ms of a 6.9 ms frame budget at 144 Hz**, on four
+Genesis 9 figures (27,087 verts and 123 bones each) across a 47-node scene, single-pass instanced at
+2468x2740 per eye, SteamVR/OpenXR on a Valve Index. Roughly five times the headroom the headset asks for.
+Performance was the fear this whole architecture was shaped around; that is what it came to.
+
 ```
 plugin/     Daz Studio 6 plugin (C++/Qt 6). Pane + TCP server. Built from the DS6 SDK tree.
 client/     Unity 6 project (OpenXR → SteamVR). Socket client, scene loader, posing UX.
