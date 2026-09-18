@@ -166,11 +166,16 @@ some other reason.
 
 ## Backlog
 
-- Mirror posing and a Genesis 8 profile.
-- A starting screen: host, pairing code and the bake options belong on the desktop window, where typing works.
-- A standalone build. Everything so far has been measured in the editor, which is also the only place
-  editor-only bugs hide -- the overlay shader was one.
+- **The photoshoot loop.** Takes capture and recall the whole scene, and that is half of it. The half that is
+  missing is the half that makes it worth having: takes that survive the session, something to review them
+  in, and an export that lands back in Daz as a pose preset rather than only as the scene's current pose.
+- **A pose library.** Not all of Daz's, a chosen few -- one sitting, one standing, one lying down -- reachable
+  from the panel without taking the headset off.
+- **Finger posing**, which the Index controllers can already feel and nothing here reads.
+- **A standalone build.** Everything so far has been measured in the editor, which is also the only place
+  editor-only bugs hide -- the overlay shader was one. It is also the only honest frame-rate number.
+- **Mirror posing**, still waiting on a scene with a deliberately mirrored pose in it, so the convention can be
+  settled by measurement rather than by guessing which way Daz means it.
+- **A Genesis 8 profile.**
+- A better hand: the controller's own model, with what each button does written on it.
 - See the backlog assessment for the rest: https://claude.ai/code/artifact/8f07cacf-be1c-49c6-8ceb-126895047f1f
-- Turn on 4x MSAA: cutout materials already ask for alpha-to-coverage, which is inert until then and is
-  the real fix for eyebrow fibres sparkling under head motion.
-- Exercise and profile the intended two-computer LAN setup.
