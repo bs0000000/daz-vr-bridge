@@ -331,6 +331,7 @@ namespace DazVrBridge
             _builtTextures.Clear();
             Figures.Clear();
             Nodes.Clear();
+            _propsMovable = _propsTooLarge = _propsWithoutGeometry = 0;
 
             // The whole Daz scene lives under this component's GameObject, so moving,
             // rotating or scaling that object places the scene relative to the XR rig.
@@ -354,6 +355,7 @@ namespace DazVrBridge
                 go.transform.localScale = DazSpace.Scale(t["scale"]);
                 byId[id] = go;
                 Nodes[id] = new LoadedNode { Id = id, Label = n.Value<string>("label"), Type = n.Value<string>("type"), Go = go, Json = n };
+                go.AddComponent<NodeTag>().Node = Nodes[id];
             }
 
             // Pass 2: hierarchy. Transforms are already absolute, so keep world placement.
@@ -391,15 +393,21 @@ namespace DazVrBridge
                 {
                     AddStaticMesh(n, go);
                     var r = go.GetComponent<Renderer>();
-                    if (r)
+                    if (!r) { _propsWithoutGeometry++; }
+                    else
                     {
+                        // Small things are movable on sight; a room or a backdrop is not,
+                        // because dragging the set while reaching for a cup is worse than
+                        // walking over to the cup. Anything can be switched on by hand
+                        // from its own panel, which is where "why will this not move"
+                        // gets answered.
                         var size = r.bounds.size;
                         if (Mathf.Max(size.x, size.y, size.z) <= maxGrabbablePropSize)
                         {
-                            var col = go.AddComponent<BoxCollider>();
-                            col.isTrigger = true;
-                            go.AddComponent<NodeHandle>().Init(Nodes[id], col);
+                            SetMovable(Nodes[id], true);
+                            _propsMovable++;
                         }
+                        else _propsTooLarge++;
                     }
                 }
                 else if (type == "camera")
@@ -435,6 +443,7 @@ namespace DazVrBridge
 
             Busy = false;
             Status = $"loaded {nodes.Count} nodes, {figures.Count} figures";
+            Debug.Log($"[DazVrBridge] {PropSummary}");
             Debug.Log($"[DazVrBridge] {Status}");
             SceneBuilt?.Invoke();
         }
@@ -603,6 +612,66 @@ namespace DazVrBridge
 
         public static bool IsNodeVisible(LoadedNode node) =>
             node?.Json == null || node.Json.Value<bool?>("visible") != false;
+
+        // ---- moving props
+        //
+        // A grab handle is a trigger box and a NodeHandle, and both can be added or taken
+        // away at any time, so "movable" is a switch rather than a property of the scene.
+
+        public static bool IsMovable(LoadedNode node) =>
+            node != null && node.Go && node.Go.GetComponent<NodeHandle>();
+
+        public static void SetMovable(LoadedNode node, bool on)
+        {
+            if (node == null || !node.Go) return;
+            var handle = node.Go.GetComponent<NodeHandle>();
+            if (on == (handle != null)) return;
+
+            if (!on)
+            {
+                if (handle.IsGrabbed) return;       // not while a hand is holding it
+                foreach (var box in node.Go.GetComponents<BoxCollider>())
+                    if (box.isTrigger) Destroy(box);
+                Destroy(handle);
+                return;
+            }
+
+            var collider = node.Go.AddComponent<BoxCollider>();
+            collider.isTrigger = true;              // the mesh collider underneath is not
+            var added = node.Go.AddComponent<NodeHandle>();
+            added.Init(node, collider);
+
+            // A big prop's grab box contains the hand wherever the hand is, so without a
+            // penalty a room switched on for moving would win every contest against the
+            // cup standing in it. Size is the penalty: the bigger the box, the further
+            // inside it you have to be before it beats something small and close.
+            var renderer = node.Go.GetComponent<Renderer>();
+            if (renderer)
+            {
+                var size = renderer.bounds.size;
+                added.pickBias += 0.02f * Mathf.Max(size.x, size.y, size.z);
+            }
+        }
+
+        int _propsMovable, _propsTooLarge, _propsWithoutGeometry;
+
+        /// True when the summary has something to say beyond "they all work".
+        public bool PropsWorthMentioning => _propsTooLarge > 0 || _propsWithoutGeometry > 0;
+
+        /// What happened to this scene's props, in one line. Loading a set and finding
+        /// that nothing can be picked up should not need a debugger to explain.
+        public string PropSummary
+        {
+            get
+            {
+                var total = _propsMovable + _propsTooLarge + _propsWithoutGeometry;
+                if (total == 0) return "no props";
+                var text = $"{total} props: {_propsMovable} movable";
+                if (_propsTooLarge > 0) text += $", {_propsTooLarge} too large (switch Movable on from its panel)";
+                if (_propsWithoutGeometry > 0) text += $", {_propsWithoutGeometry} without geometry";
+                return text;
+            }
+        }
 
         public void ApplyNodeState(LoadedNode node, JObject header)
         {

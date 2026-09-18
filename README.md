@@ -120,6 +120,12 @@ pushing away and pulling in as your hand does, always turned to face you. Placin
 it coming back to you, because a board that slides away from where it was just put is worse than one that
 opened in the wrong place. Closing and reopening gives you a fresh guess.
 
+Props up to two metres along their longest side arrive movable; a room, a backdrop or a set does not, because
+dragging the room while reaching for a cup standing in it is worse than walking to the cup. That is a default
+and not a verdict: **Movable** on the prop's own panel switches it on for anything, with a size penalty so a
+big box cannot steal a grab from something small and close. The Scene tab says how many props came out which
+way whenever there is something to say, so a set where nothing can be picked up explains itself.
+
 Pointing at a scene object opens that object's panel: select it in Daz, resync it (a figure resyncs its pose,
 everything else its transform), walk over to it, hide it, delete it (twice, and Daz's undo covers it). Hiding
 takes an object's colliders with it, which also takes away the only way to point at it again, so the session

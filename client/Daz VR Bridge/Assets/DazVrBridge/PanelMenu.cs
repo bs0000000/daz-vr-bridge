@@ -265,14 +265,26 @@ namespace DazVrBridge
                 var n = Physics.RaycastNonAlloc(ray, Hits, range, ~0, QueryTriggerInteraction.Collide);
                 var best = float.MaxValue;
                 IGrabbable found = null;
+                NodeTag tagged = null;
                 for (var i = 0; i < n; i++)
                 {
+                    if (Hits[i].distance >= best) continue;
+                    // A grab handle where there is one, and the node itself where there
+                    // is not: a prop too big to pick up is still a thing you can ask
+                    // about, and being told nothing at all is the worst answer there is.
                     var g = Hits[i].collider.GetComponentInParent<IGrabbable>();
-                    if (g == null || Hits[i].distance >= best) continue;
+                    var tag = g != null ? null : Hits[i].collider.GetComponentInParent<NodeTag>();
+                    if (g == null && tag == null) continue;
                     best = Hits[i].distance;
                     found = g;
+                    tagged = tag;
                 }
                 if (Take(found)) return Anchor();
+                if (tagged != null && tagged.Node != null)
+                {
+                    _node = tagged.Node;
+                    return Anchor();
+                }
                 // Nothing grabbable under the ray: the spot lands on the first solid
                 // thing it meets, or out at arm's reach when it meets nothing at all.
                 if (Physics.Raycast(ray, out var wall, range)) return wall.point;
@@ -365,6 +377,24 @@ namespace DazVrBridge
                     rows.Add(Button("Resync from Daz", () => _desk?.Resync(_node), () => Ready));
                 rows.Add(Button("Select in Daz", () => _desk?.Selected(_node.Id, _bone), () => Ready));
                 rows.Add(Button("Go to it", () => GoTo(Anchor())));
+
+                // Why this will not move, and the switch that changes it. Props above
+                // the size limit arrive fixed so that reaching for a cup cannot drag the
+                // room it is in; that is a default, not a verdict.
+                if (_node.Type == "prop")
+                {
+                    if (string.IsNullOrEmpty(_node.Json?.Value<string>("mesh_skipped")))
+                        rows.Add(new VrPanel.Row
+                        {
+                            Label = "Movable",
+                            Kind = VrPanel.Kind.Toggle,
+                            Get = () => SceneLoader.IsMovable(_node),
+                            Set = on => SceneLoader.SetMovable(_node, on),
+                        });
+                    else
+                        rows.Add(Note("Cannot move", () => _node.Json.Value<string>("mesh_skipped")));
+                }
+
                 rows.Add(new VrPanel.Row
                 {
                     Label = "Visible",
@@ -465,13 +495,7 @@ namespace DazVrBridge
                 Button("Capture a take", () => _takes?.Capture(), () => _takes && _takes.CanCapture),
             });
 
-            // Hiding takes an object's colliders with it, which also takes away the only
-            // way to point at it again. This is the way back, and it is only here when
-            // there is something to come back from.
-            var hidden = Hidden();
-            if (hidden > 0)
-                rows.Add(Button("Show what is hidden", ShowHidden, () => Ready,
-                    () => hidden + (hidden == 1 ? " object" : " objects")));
+
             for (var i = 0; i < PoseTakes.SlotCount; i++)
             {
                 var slot = i;
@@ -502,7 +526,7 @@ namespace DazVrBridge
 
         List<VrPanel.Row> SceneRows()
         {
-            return new List<VrPanel.Row>
+            var rows = new List<VrPanel.Row>
             {
                 Note("These take effect on rebuild", () => _loader && _loader.Busy ? _loader.Status : ""),
                 Choice("Textures", TextureChoices,
@@ -521,6 +545,21 @@ namespace DazVrBridge
                     i => { if (_loader) _loader.regionRadius = RegionValues[i]; Remember(); }),
                 Button("Fetch the scene again", () => _loader?.RequestScene(), () => Ready && _loader && !_loader.Busy),
             };
+
+            // What became of this scene's props. Only when it has something to report:
+            // "12 props, 12 movable" is not news, and the tab has a ten-row ceiling.
+            if (_loader && _loader.PropsWorthMentioning)
+                rows.Add(Note("Props", () => _loader.PropSummary));
+
+            // Hiding takes an object's colliders with it, which also takes away the only
+            // way to point at it again. This is the way back, and it is only here when
+            // there is something to come back from.
+            var hidden = Hidden();
+            if (hidden > 0)
+                rows.Add(Button("Show what is hidden", ShowHidden, () => Ready,
+                    () => hidden + (hidden == 1 ? " object" : " objects")));
+
+            return rows;
         }
 
         // The tutorial, finally somewhere it can be found: a tab, not a toggle buried in
