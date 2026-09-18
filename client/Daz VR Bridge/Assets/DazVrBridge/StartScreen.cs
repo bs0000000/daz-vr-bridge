@@ -43,7 +43,8 @@ namespace DazVrBridge
 
         Canvas _canvas;
         TMP_InputField _host, _port, _code, _texMax, _region;
-        TMP_Dropdown _textures, _influences, _found;
+        Segment _textures, _influences;
+        RectTransform _foundList;
         LanDiscovery _discovery;
         int _foundRevision = -1;
         float _nextProbe;
@@ -52,6 +53,7 @@ namespace DazVrBridge
         Button _connect;
         bool _everConnected;
         bool _touchedHost;      // typed an address: stop filling it in from discovery
+        static readonly string[] TextureNames = { "none", "opacity", "full" };
         LanDiscovery.Found _picked;
 
         static readonly Color Ground = new Color(0.062f, 0.078f, 0.098f, 1f);
@@ -109,24 +111,38 @@ namespace DazVrBridge
             if (_discovery.Revision == _foundRevision) return;
             _foundRevision = _discovery.Revision;
 
-            _found.ClearOptions();
             var servers = _discovery.Servers;
-            if (servers.Count == 0)
-            {
-                _found.options.Add(new TMP_Dropdown.OptionData("looking..."));
-            }
-            else
-            {
-                foreach (var server in servers)
-                    _found.options.Add(new TMP_Dropdown.OptionData(server.Label));
-            }
-            _found.SetValueWithoutNotify(0);
-            _found.RefreshShownValue();
 
             // One answer and there is nothing to choose between: fill it in. Two or more
             // and the choice is the user's, because guessing which Daz they meant is how
             // someone ends up posing a scene on the wrong machine.
             if (servers.Count == 1 && !_touchedHost) Take(servers[0]);
+
+            // Detached before being destroyed: Destroy happens at the end of the frame,
+            // and a layout group counts children that are still parented to it, so the
+            // old rows would push the new ones down for one frame on every change.
+            for (var i = _foundList.childCount - 1; i >= 0; i--)
+            {
+                var child = _foundList.GetChild(i);
+                child.SetParent(null, false);
+                Destroy(child.gameObject);
+            }
+
+            if (servers.Count == 0)
+            {
+                Caption(_foundList, "looking...");
+                return;
+            }
+            foreach (var server in servers)
+            {
+                var found = server;
+                Entry(_foundList, found.Label, found == _picked, () =>
+                {
+                    Take(found);
+                    _touchedHost = false;
+                    _foundRevision = -1;    // repaint, so the tick moves to this one
+                });
+            }
         }
 
         void Take(LanDiscovery.Found server)
@@ -189,8 +205,8 @@ namespace DazVrBridge
 
             if (loader)
             {
-                loader.textures = _textures.options[_textures.value].text;
-                loader.influences = _influences.value == 0 ? 4 : 8;
+                loader.textures = TextureNames[_textures.Value];
+                loader.influences = _influences.Value == 0 ? 4 : 8;
                 loader.texMax = int.TryParse(_texMax.text, out var max) && max >= 64 ? max : 1024;
                 loader.hullProxies = _hulls.isOn;
                 loader.regionRadius = float.TryParse(_region.text, NumberStyles.Float, CultureInfo.InvariantCulture, out var r) && r > 0f ? r : 0f;
@@ -281,12 +297,8 @@ namespace DazVrBridge
             var right = Column(columns);
 
             Caption(left, "The VR Bridge pane in Daz shows the address and the code.");
-            _found = Dropdown(left, "Found on the network", new[] { "looking..." }, 0);
-            _found.onValueChanged.AddListener(index =>
-            {
-                if (_discovery != null && index >= 0 && index < _discovery.Servers.Count)
-                    Take(_discovery.Servers[index]);
-            });
+            Label(left, "Found on the network", 13f, Muted).characterSpacing = 6f;
+            _foundList = Column(left);
 
             _host = Field(left, "Daz machine", session ? session.host : "127.0.0.1");
             _host.onValueChanged.AddListener(_ => _touchedHost = true);
@@ -294,10 +306,10 @@ namespace DazVrBridge
             _code = Field(left, "Pairing code (six digits)", session ? session.pairingCode : "");
 
             Caption(right, "What gets baked. Changing one means fetching the scene again.");
-            _textures = Dropdown(right, "Textures", new[] { "none", "opacity", "full" },
-                loader ? Mathf.Max(0, System.Array.IndexOf(new[] { "none", "opacity", "full" }, loader.textures)) : 2);
+            _textures = Segmented(right, "Textures", TextureNames,
+                loader ? Mathf.Max(0, System.Array.IndexOf(TextureNames, loader.textures)) : 2);
             _texMax = Field(right, "Texture size (px)", (loader ? loader.texMax : 1024).ToString());
-            _influences = Dropdown(right, "Bones per vertex", new[] { "4", "8" }, loader && loader.influences == 8 ? 1 : 0);
+            _influences = Segmented(right, "Bones per vertex", new[] { "4", "8" }, loader && loader.influences == 8 ? 1 : 0);
             _region = Field(right, "Region radius (cm, 0 = all)",
                 loader ? loader.regionRadius.ToString(CultureInfo.InvariantCulture) : "0");
             _hulls = Check(right, "Approximate strand hair", loader == null || loader.hullProxies);
@@ -427,26 +439,77 @@ namespace DazVrBridge
             return input;
         }
 
-        TMP_Dropdown Dropdown(RectTransform parent, string label, string[] options, int value)
+        // A row of chips, one lit. Not a TMP_Dropdown: that needs a template prefab with
+        // a Toggle in it, and a screen built in code has none, so every dropdown here
+        // logged an error and opened nothing at all the moment it was clicked. A handful
+        // of options never needed a popup anyway -- they fit on the screen, and a control
+        // that shows every choice at once is a better control than one that hides them.
+        sealed class Segment
+        {
+            public int Value { get; private set; }
+
+            readonly Image[] _chips;
+            readonly TextMeshProUGUI[] _texts;
+
+            public Segment(Image[] chips, TextMeshProUGUI[] texts) { _chips = chips; _texts = texts; }
+
+            public void Set(int value)
+            {
+                Value = Mathf.Clamp(value, 0, _chips.Length - 1);
+                for (var i = 0; i < _chips.Length; i++)
+                {
+                    _chips[i].color = i == Value ? Accent : FieldBg;
+                    _texts[i].color = i == Value ? Ground : Ink;
+                }
+            }
+        }
+
+        Segment Segmented(RectTransform parent, string label, string[] options, int value)
         {
             Label(parent, label, 13f, Muted).characterSpacing = 6f;
-            var row = Box(parent, label + " dropdown", FieldBg, new Vector2(0f, 34f));
-            row.gameObject.AddComponent<LayoutElement>().minHeight = 34f;
+            var row = Row(parent, 6f);
+            var chips = new Image[options.Length];
+            var texts = new TextMeshProUGUI[options.Length];
+            Segment segment = null;
 
-            var caption = Label(row, options[Mathf.Clamp(value, 0, options.Length - 1)], 16f, Ink);
+            for (var i = 0; i < options.Length; i++)
+            {
+                var index = i;
+                var chip = Box(row, options[i] + " chip", FieldBg, new Vector2(0f, 34f));
+                chip.gameObject.AddComponent<LayoutElement>().minHeight = 34f;
+                texts[i] = Stretch(Label(chip, options[i], 15f, Ink));
+                texts[i].alignment = TextAlignmentOptions.Center;
+                chips[i] = chip.GetComponent<Image>();
+                var button = chip.gameObject.AddComponent<Button>();
+                button.targetGraphic = chips[i];
+                button.onClick.AddListener(() => segment.Set(index));
+            }
+
+            segment = new Segment(chips, texts);
+            segment.Set(value);
+            return segment;
+        }
+
+        // One discovered machine. Rebuilt whenever the list changes, so it is a button
+        // rather than anything with state of its own.
+        void Entry(RectTransform parent, string text, bool chosen, UnityEngine.Events.UnityAction onClick)
+        {
+            var row = Box(parent, "found", chosen ? Accent : FieldBg, new Vector2(0f, 32f));
+            row.gameObject.AddComponent<LayoutElement>().minHeight = 32f;
+            var caption = Stretch(Label(row, text, 15f, chosen ? Ground : Ink));
             caption.margin = new Vector4(10f, 0f, 10f, 0f);
-            var captionRect = (RectTransform)caption.transform;
-            captionRect.anchorMin = Vector2.zero;
-            captionRect.anchorMax = Vector2.one;
-            captionRect.offsetMin = captionRect.offsetMax = Vector2.zero;
+            var button = row.gameObject.AddComponent<Button>();
+            button.targetGraphic = row.GetComponent<Image>();
+            button.onClick.AddListener(onClick);
+        }
 
-            var drop = row.gameObject.AddComponent<TMP_Dropdown>();
-            drop.captionText = caption;
-            drop.ClearOptions();
-            foreach (var option in options) drop.options.Add(new TMP_Dropdown.OptionData(option));
-            drop.value = Mathf.Clamp(value, 0, options.Length - 1);
-            drop.RefreshShownValue();
-            return drop;
+        static TextMeshProUGUI Stretch(TextMeshProUGUI text)
+        {
+            var rect = (RectTransform)text.transform;
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = rect.offsetMax = Vector2.zero;
+            return text;
         }
 
         Toggle Check(RectTransform parent, string label, bool value)
