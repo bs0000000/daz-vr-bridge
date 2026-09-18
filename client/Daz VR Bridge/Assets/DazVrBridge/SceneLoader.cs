@@ -338,6 +338,8 @@ namespace DazVrBridge
             _root = new GameObject("DazScene");
             _root.transform.SetParent(transform, false);
 
+            ScenePath = _manifest.Value<string>("scene") ?? "";
+
             var byId = new Dictionary<string, GameObject>();
             var figures = Figures;
             var nodes = (JArray)_manifest["nodes"];
@@ -672,6 +674,10 @@ namespace DazVrBridge
                 return text;
             }
         }
+
+        /// The Daz scene these nodes came from, as Daz knows it. Empty for an unsaved
+        /// scene. Takes are filed under it, so a photoshoot comes back with its scene.
+        public string ScenePath { get; private set; } = "";
 
         public void ApplyNodeState(LoadedNode node, JObject header)
         {

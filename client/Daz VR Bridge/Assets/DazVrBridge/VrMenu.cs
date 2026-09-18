@@ -222,10 +222,13 @@ namespace DazVrBridge
             for (var i = 0; i < slots.Length && i < PoseTakes.SlotCount; i++)
             {
                 var index = i;
+                // Counting back from the newest: slot 1 is the take you just caught,
+                // which is the one a flick is for. Choosing among twenty is the panel's
+                // job, and it has a tab for it.
                 session[slots[i]] = new Entry
                 {
                     Label = (index + 1).ToString(), Kind = Kind.Action,
-                    Run = () => _takes?.Recall(index),
+                    Run = () => { if (_takes) _takes.Recall(_takes.SlotToIndex(index)); },
                     Enabled = () => _takes && _takes.Filled(index),
                 };
             }

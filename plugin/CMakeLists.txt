@@ -45,6 +45,8 @@ add_library( ${DZ_PLUGIN_TGT_NAME} SHARED
 	mesh_bake.h
 	pose_apply.cpp
 	pose_apply.h
+	pose_export.cpp
+	pose_export.h
 	texture_bake.cpp
 	texture_bake.h
 	pluginmain.cpp

@@ -30,6 +30,7 @@
 #include "dzviewportmgr.h"
 
 #include "crypto.h"
+#include "pose_export.h"
 #include "scene_bake.h"
 #include "texture_bake.h"
 #include "version.h"
@@ -371,6 +372,12 @@ void Server::handleFrame( Connection &c, const Frame &f )
 	if ( type == "node.transform" || type == "camera.set" )
 	{
 		handleNodeTransform( c, f );
+		return;
+	}
+
+	if ( type == "pose.export" )
+	{
+		handlePoseExport( c, f );
 		return;
 	}
 
@@ -906,6 +913,46 @@ void Server::handleNodeTransform( Connection &c, const Frame &f )
 		log( QString( "Moved node (\"%1\")" ).arg( label ) );
 	}
 	// The watcher broadcasts node.state ~100 ms later as confirmation.
+}
+
+// A pose, out of the headset and into the content library as a preset that can be
+// applied to anything later. The figure's CURRENT pose is what gets written, so the
+// client recalls the take it wants first and then asks for this -- which also means
+// what you export is exactly what you were just looking at.
+void Server::handlePoseExport( Connection &c, const Frame &f )
+{
+	if ( c.role != "control" )
+	{
+		sendError( c, f, "wrong_connection", "pose.export belongs on the control connection" );
+		return;
+	}
+
+	const QString id = f.header.value( "figure" ).toString();
+	DzSkeleton* figure = qobject_cast<DzSkeleton*>( findNodeById( id ) );
+	if ( !figure )
+	{
+		sendError( c, f, "unknown_node", id % " is not a figure" );
+		return;
+	}
+
+	const ExportResult r = exportPosePreset( figure, f.header.value( "name" ).toString( "VR pose" ) );
+
+	QJsonObject h;
+	h[ "t" ] = "pose.exported";
+	h[ "seq" ] = m_seq++;
+	h[ "ref_seq" ] = f.seq();
+	h[ "figure" ] = id;
+	h[ "ok" ] = r.ok;
+	h[ "path" ] = r.path;
+	h[ "channels" ] = r.channels;
+	if ( !r.ok )
+	{
+		h[ "error" ] = r.error;
+	}
+	send( c.socket, h );
+
+	log( r.ok ? QString( "Exported a pose preset: %1 (%2 channels)" ).arg( r.path ).arg( r.channels )
+			  : QString( "Pose export failed: %1" ).arg( r.error ) );
 }
 
 // The two edits a panel in VR can ask for that are not a transform: hide something

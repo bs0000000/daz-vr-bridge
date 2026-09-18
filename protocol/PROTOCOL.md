@@ -53,6 +53,7 @@ Pairing: a client whose peer address is not loopback must send `code` (six digit
 | `node.visible` | control | `node, visible` — hides or shows a node at the desk, as one undo step. Not for bones. → `node.result` | **Phase 4 ✓** |
 | `node.delete` | control | `node` — removes a node from the scene, as one undo step. Not for bones. → `node.result`, and the node-list change brings a `scene.changed` of its own. | **Phase 4 ✓** |
 | `secure.key` | both | `k` (premaster, RSA-OAEP, base64), `nonce_c` — second leg of the handshake; the last frame in the clear | **Phase 4 ✓** |
+| `pose.export` | control | `figure, name` — writes that figure's CURRENT pose to `<content>/Poses/VR Bridge/<name>.duf` as a `preset_pose` DSON, addressed to `@selection` so it applies to anything later. → `pose.exported` | **Phase 4 ✓** |
 | `pose.preview` | control | `figure, bones` | **reserved, v2** — v1 plugin answers `error deferred_v2` |
 
 ## Security
@@ -122,6 +123,7 @@ discovery probes* switch turns it off, and then the port only exists for those w
 | `pose.state` | control | `figure, bones: [ { id, ws: { pos, rot } } ], selftest?` — every bone's Daz world transform. Sent whenever any bone of that figure moves (debounced 100 ms), after a `pose.commit`, and for `selftest.begin`. | **Phase 2a ✓** |
 | `selftest.result` | control | `figure, pass, bones, max_error_deg, worst, error?` | **Phase 2a ✓** (pass = every Euler control back within 0.01°) |
 | `secure.ready` | both | `cipher`, and on a control connection `session_token`, `token_days` — the first frame of the encrypted channel |  **Phase 4 ✓** |
+| `pose.exported` | control | `figure, ok, path, channels, error?` — the answer to `pose.export` | **Phase 4 ✓** |
 | `node.result` | control | `node, action: visible\|delete, ok` — the answer to `node.visible` / `node.delete` | **Phase 4 ✓** |
 | `node.state` | control | `node, transform: { pos, rot, scale }, focal_mm?` — any prop/camera/light moved at the desk (debounced 100 ms) and the confirmation after `node.transform`/`camera.set` | **Phase 3 ✓** |
 

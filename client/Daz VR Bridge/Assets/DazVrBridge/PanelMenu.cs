@@ -41,6 +41,7 @@ namespace DazVrBridge
         SceneLoader.LoadedNode _node;         // what the object panel is about
         SceneLoader.LoadedFigure _figure;
         string _bone;
+        int _take = -1;                       // the take whose page is open, -1 for the list
         VrPanel.Row _armed;                   // a Delete waiting for its second press
         float _armedUntil;
         bool _aiming;
@@ -448,6 +449,7 @@ namespace DazVrBridge
             {
                 new VrPanel.Tab { Label = "Contact", Build = ContactRows },
                 new VrPanel.Tab { Label = "Session", Build = SessionRows },
+                new VrPanel.Tab { Label = "Takes", Build = TakeRows },
                 new VrPanel.Tab { Label = "Scene", Build = SceneRows },
                 new VrPanel.Tab { Label = "Buttons", Build = ButtonRows },
             };
@@ -492,19 +494,100 @@ namespace DazVrBridge
                 Slider("Haptics", 0f, 1f, 100f, "%", () => VrHand.HapticGain, v => VrHand.HapticGain = v, () => true),
                 Button("Life size", LifeSize, () => _rig, () => (_rig ? _rig.Scale : 1f).ToString("0.00") + "x"),
                 Button("Resync everything", () => _desk?.ResyncAll(), () => Ready && !DeskSync.Rendering),
-                Button("Capture a take", () => _takes?.Capture(), () => _takes && _takes.CanCapture),
+                Button("Capture a take", Capture, () => _takes && _takes.CanCapture),
             });
 
 
-            for (var i = 0; i < PoseTakes.SlotCount; i++)
+            return rows;
+        }
+
+        // ---- takes
+        //
+        // The list, or one take's page. Two levels rather than one row per action per
+        // take: a take has four things you might do to it, and a row can only do one.
+
+        void Capture()
+        {
+            var made = _takes ? _takes.Capture() : -1;
+            if (made >= 0) _panel?.Rebuild();
+        }
+
+        List<VrPanel.Row> TakeRows()
+        {
+            if (!_takes) return new List<VrPanel.Row>();
+            if (_take >= 0 && _take < _takes.Count) return TakePage(_takes.Takes[_take]);
+            _take = -1;
+
+            var rows = new List<VrPanel.Row>
             {
-                var slot = i;
-                rows.Add(Button("Take " + (slot + 1),
-                    () => _takes?.Recall(slot),
-                    () => _takes && _takes.Filled(slot),
-                    () => _takes && _takes.Filled(slot) ? "recall" : "empty"));
+                Button("Capture a take", Capture, () => _takes.CanCapture),
+            };
+            if (_takes.Count == 0)
+            {
+                rows.Add(Note("Nothing captured yet", () => "they last past this session"));
+                return rows;
+            }
+
+            // Newest first: the one you just caught is the one you are looking for.
+            var shown = 0;
+            for (var i = _takes.Count - 1; i >= 0 && shown < 8; i--, shown++)
+            {
+                var index = i;
+                var take = _takes.Takes[i];
+                rows.Add(Button(take.Name,
+                    () => { _take = index; _panel.Rebuild(); },
+                    null,
+                    () => take.FigureCount + (take.FigureCount == 1 ? " figure" : " figures")));
             }
             return rows;
+        }
+
+        List<VrPanel.Row> TakePage(PoseTakes.Take take)
+        {
+            var rows = new List<VrPanel.Row>
+            {
+                Note("Taken at", () => take.When),
+                Note("Holds", () => take.FigureCount + (take.FigureCount == 1 ? " figure" : " figures")),
+                Button("Recall it", () => _takes.Recall(_take), () => _takes && !DeskSync.Rendering),
+                // Recall first, then export: the plugin writes whatever pose the figure
+                // is wearing, and both messages go down the same ordered connection, so
+                // what lands in the library is what this take holds.
+                Button("Save as a Daz pose", () => Export(take), () => Ready && !DeskSync.Rendering,
+                    () => DeskSync.LastExport),
+            };
+
+            var remove = new VrPanel.Row { Label = "Delete this take", Kind = VrPanel.Kind.Button, Danger = true };
+            remove.Run = () =>
+            {
+                if (_armed == remove)
+                {
+                    _takes.Delete(_take);
+                    Disarm();
+                    _take = -1;
+                    _panel.Rebuild();
+                    return;
+                }
+                Disarm();
+                _armed = remove;
+                _armedUntil = Time.time + 5f;
+                remove.Label = "Delete - press again";
+            };
+            rows.Add(remove);
+            rows.Add(Button("Back to the takes", () => { _take = -1; _panel.Rebuild(); }));
+            return rows;
+        }
+
+        // One preset per figure, because a pose preset applies to whatever is selected
+        // when it is loaded, and a file holding five characters' poses could not.
+        void Export(PoseTakes.Take take)
+        {
+            if (!_takes.Recall(_take)) return;
+            var many = take.FigureCount > 1;
+            foreach (var id in take.FigureIds)
+            {
+                var label = _loader && _loader.Figures.TryGetValue(id, out var figure) ? figure.Label : id;
+                _desk?.ExportPose(id, many ? take.Name + " - " + label : take.Name);
+            }
         }
 
         int Hidden()

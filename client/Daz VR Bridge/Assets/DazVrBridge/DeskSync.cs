@@ -94,6 +94,27 @@ namespace DazVrBridge
             foreach (var node in loader.Nodes.Values) Resync(node);
         }
 
+        /// Writes one figure's CURRENT pose into Daz's content library as a pose
+        /// preset. Current, so whoever calls this recalls the take it wants first --
+        /// which also means what gets exported is exactly what was on screen.
+        public void ExportPose(string figureId, string name)
+        {
+            if (string.IsNullOrEmpty(figureId) || !session || !session.ControlReady) return;
+            session.SendControl(new JObject
+            {
+                ["t"] = "pose.export",
+                ["figure"] = figureId,
+                ["name"] = name,
+            });
+        }
+
+        /// Where the last export landed, or why it did not. Shown on the take's page,
+        /// because "it worked" is not an answer when the file is on another machine.
+        public static string LastExport { get; private set; } = "";
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetExport() { LastExport = ""; }
+
         // ---- hide and delete
         //
         // Both are real edits in Daz, and both are one step on its undo stack, which is
@@ -158,6 +179,16 @@ namespace DazVrBridge
         void OnFrame(BridgeFrame f)
         {
             if (f.Type == "node.result") { OnNodeResult(f); return; }
+            if (f.Type == "pose.exported")
+            {
+                var ok = f.Header.Value<bool?>("ok") ?? false;
+                var path = f.Header.Value<string>("path") ?? "";
+                LastExport = ok
+                    ? "saved to " + System.IO.Path.GetFileName(path)
+                    : "failed: " + (f.Header.Value<string>("error") ?? "unknown");
+                Debug.Log($"[DazVrBridge] pose.export {(ok ? path : LastExport)}");
+                return;
+            }
             if (f.Type != "render.state") return;
             var rendering = f.Header.Value<bool?>("rendering") ?? false;
             if (rendering == Rendering) return;

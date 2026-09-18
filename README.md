@@ -152,8 +152,21 @@ transform, which is a few hundred bytes against a re-bake's whole scene.
 
 **Takes** hold the whole scene's pose -- every figure, and the props they are resting on, since a hand on a
 chair is only a pose while the chair is where it was. Capture costs nothing: the data is what pose.commit
-already sends. They last for the session and are cleared by a scene rebuild, whose ids may no longer mean the
-same thing. Review, thumbnails and export are deliberately absent until taking and recalling has earned them.
+already sends. Mimic the pose, press the button, move on.
+
+They live on disk, filed under the Daz scene they were taken in, so a photoshoot does not end when the headset
+comes off; a take only ever comes back into the scene it belongs to, and a figure that has been re-rigged
+since is skipped rather than mangled. The panel's **Takes** tab is the review: newest first, one page each,
+with recall, delete, and **Save as a Daz pose**.
+
+That last one writes a real `preset_pose` .duf into `<content>/Poses/VR Bridge/`, addressed to `@selection`
+the way Daz writes its own, so it applies to any figure later rather than only the one it came from. The take
+is recalled first and the preset is written from the figure's current pose, down the same ordered connection,
+so what lands in the library is what you were just looking at. The channel values are the undriven ones --
+writing what ERC is contributing would bake a controller's work into the base and count it twice.
+
+The wheel keeps three quick slots, counting back from the newest, because a flick is for the take you just
+caught; choosing among twenty is the panel's job.
 
 **Draft mode** stops anything being sent to Daz and stops anything arriving from it, so a long experiment
 neither fills Daz's undo history with intermediate poses nor gets overwritten halfway through. Leaving it
