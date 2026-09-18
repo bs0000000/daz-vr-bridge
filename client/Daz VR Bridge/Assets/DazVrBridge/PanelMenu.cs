@@ -122,8 +122,8 @@ namespace DazVrBridge
             spot.SetActive(true);
 
             var caption = Caption();
-            var text = _figure != null ? _figure.Label + "  -  " + _bone
-                     : _node != null ? _node.Label
+            var text = _node != null ? _node.Label
+                     : _figure != null ? _figure.Label
                      : "Session settings";
             if (caption.text != text) caption.text = text;
             var head = Camera.main;
@@ -229,15 +229,23 @@ namespace DazVrBridge
             // release open a panel about something the aim never named.
             var at = Anchor();
 
-            if (_figure != null)
-            {
-                _panel.Open("bone:" + _figure.Id + "/" + _bone, _figure.Label, BoneTabs(), at, hand.side);
-                _desk?.Selected(_figure.Id, _bone);
-            }
-            else if (_node != null)
+            // A bone opens its FIGURE's panel. Pointing at someone's forearm is how you
+            // point at a person -- there is nothing on this panel that is about one bone,
+            // and until there is, making people aim at a joint to reach a character is
+            // asking them to know how the rig is put together to use the tool.
+            //
+            // The bone is still remembered, for one thing: Select in Daz selects the
+            // bone that was actually under the ray, which is more use at the desk than
+            // selecting the figure and more precise than anything else here needs.
+            if (_node != null)
             {
                 _panel.Open("node:" + _node.Id, _node.Label, NodeTabs(), at, hand.side);
-                _desk?.Selected(_node.Id, null);
+                _desk?.Selected(_node.Id, _bone);
+            }
+            else if (_figure != null)
+            {
+                _panel.Open("figure:" + _figure.Id, _figure.Label, FigureTabs(), at, hand.side);
+                _desk?.Selected(_figure.Id, _bone);
             }
             else
             {
@@ -303,19 +311,14 @@ namespace DazVrBridge
 
         // ---- the object panel
 
-        List<VrPanel.Tab> BoneTabs()
+        List<VrPanel.Tab> FigureTabs()
         {
-            return One("Bone", () =>
+            return One("Figure", () => new List<VrPanel.Row>
             {
-                var rows = new List<VrPanel.Row>
-                {
-                    Note("Bone", () => _bone),
-                    Button("Resync this figure", () => _desk?.Resync(_figure), () => Ready),
-                    Button("Select in Daz", () => _desk?.Selected(_figure.Id, _bone), () => Ready),
-                    Button("Go to it", () => GoTo(Anchor())),
-                };
-                if (_node != null) rows.Add(Button("Whole figure...", () => Reopen(NodeTabs(), _node.Label)));
-                return rows;
+                Note("Pointing at", () => _bone),
+                Button("Resync the pose", () => _desk?.Resync(_figure), () => Ready),
+                Button("Select in Daz", () => _desk?.Selected(_figure.Id, _bone), () => Ready),
+                Button("Go to it", () => GoTo(Anchor())),
             });
         }
 
@@ -327,6 +330,10 @@ namespace DazVrBridge
                 {
                     Note("Type", () => _node.Type),
                 };
+                // Which bone the ray was on. Only shown when it means something, and it
+                // is what Select in Daz below will reach for.
+                if (_figure != null && !string.IsNullOrEmpty(_bone))
+                    rows.Add(Note("Pointing at", () => _bone));
 
                 if (_node.Type == "camera")
                 {
@@ -351,8 +358,12 @@ namespace DazVrBridge
                     });
                 }
 
-                rows.Add(Button("Resync from Daz", () => _desk?.Resync(_node), () => Ready));
-                rows.Add(Button("Select in Daz", () => _desk?.Selected(_node.Id, null), () => Ready));
+                // A figure's truth is its pose, not the one transform under its root.
+                if (_figure != null)
+                    rows.Add(Button("Resync the pose", () => _desk?.Resync(_figure), () => Ready));
+                else
+                    rows.Add(Button("Resync from Daz", () => _desk?.Resync(_node), () => Ready));
+                rows.Add(Button("Select in Daz", () => _desk?.Selected(_node.Id, _bone), () => Ready));
                 rows.Add(Button("Go to it", () => GoTo(Anchor())));
                 rows.Add(new VrPanel.Row
                 {
@@ -383,11 +394,6 @@ namespace DazVrBridge
         {
             if (_armed != null) _armed.Label = "Delete";
             _armed = null;
-        }
-
-        void Reopen(List<VrPanel.Tab> tabs, string title)
-        {
-            _panel.Open(_node != null ? "node:" + _node.Id : "session", title, tabs, Anchor(), panelHand);
         }
 
         // Walks the rig over rather than teleporting the scene: the object ends up an
@@ -456,9 +462,16 @@ namespace DazVrBridge
                 Slider("Haptics", 0f, 1f, 100f, "%", () => VrHand.HapticGain, v => VrHand.HapticGain = v, () => true),
                 Button("Life size", LifeSize, () => _rig, () => (_rig ? _rig.Scale : 1f).ToString("0.00") + "x"),
                 Button("Resync everything", () => _desk?.ResyncAll(), () => Ready && !DeskSync.Rendering),
-                Button("Rebuild the scene", () => _loader?.RequestScene(), () => Ready && _loader && !_loader.Busy),
                 Button("Capture a take", () => _takes?.Capture(), () => _takes && _takes.CanCapture),
             });
+
+            // Hiding takes an object's colliders with it, which also takes away the only
+            // way to point at it again. This is the way back, and it is only here when
+            // there is something to come back from.
+            var hidden = Hidden();
+            if (hidden > 0)
+                rows.Add(Button("Show what is hidden", ShowHidden, () => Ready,
+                    () => hidden + (hidden == 1 ? " object" : " objects")));
             for (var i = 0; i < PoseTakes.SlotCount; i++)
             {
                 var slot = i;
@@ -468,6 +481,23 @@ namespace DazVrBridge
                     () => _takes && _takes.Filled(slot) ? "recall" : "empty"));
             }
             return rows;
+        }
+
+        int Hidden()
+        {
+            if (!_loader) return 0;
+            var count = 0;
+            foreach (var node in _loader.Nodes.Values)
+                if (!SceneLoader.IsNodeVisible(node)) count++;
+            return count;
+        }
+
+        void ShowHidden()
+        {
+            if (!_loader) return;
+            foreach (var node in _loader.Nodes.Values)
+                if (!SceneLoader.IsNodeVisible(node)) _desk?.SetVisible(node, true);
+            _panel?.Rebuild();
         }
 
         List<VrPanel.Row> SceneRows()

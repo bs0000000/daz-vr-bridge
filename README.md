@@ -101,21 +101,27 @@ what you reach for in the middle of a pose and wrong for everything that has to 
 panel is for -- which object this is, how big its textures are, what this button is about to delete.
 
 Hold A with an empty hand and a ray comes out of it, with a spot where it lands and the name of what it has
-found floating above that: a bone reads as its figure and its bone, a prop as its label, empty space as
-"Session settings". Release and that thing's board appears at arm's length, off to the side of whatever it is about so the
+found floating above that: a character reads as the character, a prop as its label, empty space as "Session
+settings". Pointing anywhere on a figure means that figure -- nothing on the panel is about one bone, and
+until something is, making someone aim at a joint to reach a character asks them to know how the rig is put
+together in order to use the tool. The bone under the ray is still remembered for one thing, because it is
+more use at the desk than the figure: it is what **Select in Daz** reaches for. Release and the board appears
+at arm's length, off to the side of whatever it is about so the
 subject stays in view. Point at it with the controller's aim pose and pull the trigger; sliders drag, and a
 choice steps forward or back depending on which half of the readout you click. It hangs from its top edge, so
 switching tab never moves the title out from under the cursor, and it comes back in front of you if you walk
 off or turn around.
 
-Pointing at a scene object opens that object's panel: select it in Daz, resync it, walk over to it, hide it,
-delete it (twice, and Daz's undo covers it). A camera also gets **Render** and a **focal length** slider --
+Pointing at a scene object opens that object's panel: select it in Daz, resync it (a figure resyncs its pose,
+everything else its transform), walk over to it, hide it, delete it (twice, and Daz's undo covers it). Hiding
+takes an object's colliders with it, which also takes away the only way to point at it again, so the session
+panel grows a *Show what is hidden* row whenever there is something to come back from. A camera also gets **Render** and a **focal length** slider --
 which is the point, because taking a render used to mean holding the camera steady in one hand while flicking
 a wheel with the other. Frame the shot, let go, press the button; the lens is sent once, when the drag ends,
 rather than forty times on the way there.
 
 Pointing at nothing opens the session panel: **Contact** (snapping, body contact, joint limits, contact
-shapes), **Session** (draft, haptics, life size, resync, rebuild, takes), **Scene** (textures, texture size,
+shapes), **Session** (connect, draft, haptics, life size, resync, takes), **Scene** (textures, texture size,
 bones per vertex, strand hair, region radius -- the five that cost a re-bake, with the button that pays for
 it), and **Buttons**, which is every binding written down.
 

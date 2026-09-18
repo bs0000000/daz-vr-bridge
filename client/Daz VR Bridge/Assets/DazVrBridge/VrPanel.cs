@@ -64,7 +64,10 @@ namespace DazVrBridge
         const float TabH = 4.4f;
         const float RowH = 3.6f;
         const float RowStep = 4.0f;
-        const int MaxRows = 9;
+        // Ten, which is what the session tab needs at its longest -- a Connect row while
+        // nothing is connected, and a way back for anything that has been hidden. Rows
+        // past this are silently dropped, so the number has to be the real maximum.
+        const int MaxRows = 10;
         const int MaxTabs = 4;
         const float TrackRight = W * 0.5f - 1.4f;
         const float TrackLeft = -W * 0.5f + 14.6f;
