@@ -324,7 +324,24 @@ namespace DazVrBridge
         // ------------------------------------------------------------------
         // building
 
+        // Wrapped, because Busy is what stops hands grabbing a scene that is half built --
+        // and an exception on the way through used to leave it true forever. A build that
+        // fails now says so and lets go of the session; a node that fails takes only itself.
         void Build()
+        {
+            try { BuildScene(); }
+            catch (System.Exception e)
+            {
+                Status = "Scene build failed: " + e.Message;
+                Debug.LogException(e);
+            }
+            finally
+            {
+                Busy = false;
+            }
+        }
+
+        void BuildScene()
         {
             ClearScene();
             _textureSlots.Clear();
@@ -373,10 +390,29 @@ namespace DazVrBridge
                 if (n.Value<string>("type") == "figure")
                     figures[n.Value<string>("id")] = BuildFigure(n, byId[n.Value<string>("id")]);
 
+            var failed = 0;
             foreach (JObject n in nodes)
             {
                 var type = n.Value<string>("type");
                 var id = n.Value<string>("id");
+                try { BuildNode(n, type, id, byId, figures); }
+                catch (System.Exception e)
+                {
+                    // A prop with a bad mesh, a camera whose shader did not ship: whatever
+                    // it is, the other two hundred nodes are still worth having.
+                    failed++;
+                    Debug.LogError($"[DazVrBridge] {n.Value<string>("label")} ({type}) failed to build: {e.Message}");
+                }
+            }
+            if (failed > 0) Debug.LogWarning($"[DazVrBridge] {failed} node(s) did not build; the rest of the scene is up");
+
+            BuildRest(nodes, byId, figures, failed);
+        }
+
+        void BuildNode(JObject n, string type, string id, Dictionary<string, GameObject> byId,
+                       Dictionary<string, LoadedFigure> figures)
+        {
+            {
                 var go = byId[id];
                 if (type == "follower")
                 {
@@ -437,6 +473,11 @@ namespace DazVrBridge
                 if (parentBone != null && parentNode != null && figures.TryGetValue(parentNode, out var pf) && pf.ByName.TryGetValue(parentBone, out var bi))
                     go.transform.SetParent(pf.Bones[bi], true);
             }
+        }
+
+        void BuildRest(JArray nodes, Dictionary<string, GameObject> byId,
+                       Dictionary<string, LoadedFigure> figures, int failed)
+        {
 
             // Analytic capsules follow the skeleton and are queried only while a hand or
             // foot IK handle is moving. They add no animated physics or idle-frame work.
@@ -444,7 +485,12 @@ namespace DazVrBridge
                 figure.Go.AddComponent<BodyCollisionRig>().Init(figure);
 
             Busy = false;
-            Status = $"loaded {nodes.Count} nodes, {figures.Count} figures";
+            // The count of what did not build goes in the status, not only the log: in a
+            // headset there is no console, and "some of my scene is missing" needs an
+            // answer that is visible from inside it.
+            Status = failed > 0
+                ? $"loaded {nodes.Count - failed} of {nodes.Count} nodes, {figures.Count} figures - {failed} failed"
+                : $"loaded {nodes.Count} nodes, {figures.Count} figures";
             Debug.Log($"[DazVrBridge] {PropSummary}");
             Debug.Log($"[DazVrBridge] {Status}");
             SceneBuilt?.Invoke();
@@ -841,7 +887,7 @@ namespace DazVrBridge
 
             for (var i = 0; i < groups.Count; i++)
             {
-                var m = clayMaterial ? new Material(clayMaterial) : new Material(DefaultShader());
+                var m = clayMaterial ? new Material(clayMaterial) : BridgeShaders.Material(DefaultShader(), "surface");
                 _ownedResources.Add(m);
                 var color = new Color(0.7f, 0.7f, 0.7f);
                 var matIndex = groups[i].Material;
@@ -952,9 +998,6 @@ namespace DazVrBridge
             m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         }
 
-        static Shader DefaultShader()
-        {
-            return Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-        }
+        static Shader DefaultShader() => BridgeShaders.Lit();
     }
 }

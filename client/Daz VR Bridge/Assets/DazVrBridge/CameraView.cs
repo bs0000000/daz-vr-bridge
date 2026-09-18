@@ -84,8 +84,8 @@ namespace DazVrBridge
             _pip.SetParent(transform, false);
             _pip.localScale = new Vector3(pipWidth, pipWidth / Aspect, 1f);
             _pip.localPosition = new Vector3(0f, pipHeightAbove, 0f);
-            var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Texture");
-            var mat = new Material(shader) { name = "pip", mainTexture = _rt };
+            var mat = BridgeShaders.Material(BridgeShaders.Unlit(), "pip");
+            mat.mainTexture = _rt;
             quad.GetComponent<Renderer>().sharedMaterial = mat;
         }
 
