@@ -2,7 +2,9 @@
 - [done] Geoshell are breaking the shapes in Unity (looks like the character has a ghost hallowing costume, and it doesn't render). Daz is running with one of them (Nadine 9 has G9WT Wet Geoshell Map WB6 High Density Drops geoshell)
 - [done] Starting screen (needs an option menu, connection informations and different tools if we have)
   - on the monitor: connection + the five bake options. The in-VR panel now carries the same options.
-- Positon copying: just mimic the pose, then press a button to save, like a photoshoot. At the end, review your poses, select/edit and export them if you want. Also index has finger tracking, so it is really easy to make hand poses
+- [mostly done] Positon copying: just mimic the pose, then press a button to save, like a photoshoot. At the end, review your poses, select/edit and export them if you want. Also index has finger tracking, so it is really easy to make hand poses
+  - takes persist per scene, the panel's Takes tab reviews them, and Save as a Daz pose writes a preset_pose .duf
+  - still missing: finger tracking, and thumbnails in the review
 - Quick access to favorite poses. We might not want to import all daz postures, but being able to select some for quick access, like one siting, one standing, one laying down, etc ...
 - [partly] Tutorial -- not a scripted one (you said don't). The panel's Buttons tab lists every binding,
   and the floating per-hand labels are switched on from there.
@@ -18,3 +20,14 @@
 
 - [done] Start render on Cam: the Unity app will probably need to enter draft mode after this to be able to continue to work as Daz block edits when rendering
   - on the camera's own panel, so the shot is framed, let go of, and then taken. Drafts for the render's duration and commits after.
+
+# Next round (2026-09-18)
+- Timeline navigation: move backward and forward, save a key. Keys should register the whole object by default,
+  not one channel.
+- Tools management: too many things and not enough buttons on the controller. Needs a way to say what you are
+  trying to do, so the same button can mean different things on purpose rather than by accident.
+- Props parameters: open and close doors and the like. Daz drives these with the node's own properties, so this
+  is a property list on the object panel rather than anything new in the protocol.
+- A proper scene: the Unity side is an empty scene with a grid. It needs an identity -- a ground, a horizon,
+  something that reads as a place rather than as a void with people in it.
+- Refine the UI: icons, and a pass over the whole thing now that there is enough of it to judge.
