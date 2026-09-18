@@ -79,6 +79,18 @@ namespace DazVrBridge
             Render();
         }
 
+        // A screen-space canvas does not exist as far as the headset is concerned, so
+        // somebody waiting in VR for a setup screen they cannot see is waiting forever.
+        // Say where it is, and that there is a Connect button in here too.
+        string Desk()
+        {
+            if (!_start) _start = FindAnyObjectByType<StartScreen>();
+            if (!_start || !_start.Waiting) return "";
+            return "\n<size=80%>The setup screen is on the monitor. Or open the panel (A) and press Connect.</size>";
+        }
+
+        StartScreen _start;
+
         void ReadScene(Newtonsoft.Json.Linq.JToken scene)
         {
             _scenePath = scene?.Value<string>("path") ?? "";
@@ -107,10 +119,11 @@ namespace DazVrBridge
                     text.text = $"<b>{name}</b>\n{_sceneNodes} nodes · Daz Studio {_dazVersion}{status}{draft}{selfTest}{limits}{hands}";
                     break;
                 case BridgeClient.State.Failed:
-                    text.text = $"Failed: {session.Control.LastError}\nretrying…";
+                    text.text = $"Failed: {session.Control.LastError}\nretrying…{Desk()}";
                     break;
                 default:
-                    text.text = "Disconnected";
+                    var desk = Desk();
+                    text.text = "Not connected." + (desk.Length > 0 ? desk : " Retrying…");
                     break;
             }
         }

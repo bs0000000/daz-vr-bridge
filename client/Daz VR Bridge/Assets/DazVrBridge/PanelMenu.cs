@@ -440,7 +440,17 @@ namespace DazVrBridge
 
         List<VrPanel.Row> SessionRows()
         {
-            var rows = new List<VrPanel.Row>
+            var rows = new List<VrPanel.Row>();
+
+            // Dialling from inside the headset. The settings themselves stay on the
+            // monitor -- an address and six digits get typed, and typing in VR is
+            // miserable -- but pressing Connect with what is already saved is one
+            // button, and taking the headset off to press it is absurd.
+            if (!Ready)
+                rows.Add(Button("Connect to Daz", () => _session?.Reconnect(), () => _session,
+                    () => _session ? _session.host + ":" + _session.port : ""));
+
+            rows.AddRange(new[]
             {
                 Toggle("Draft (nothing reaches Daz)", () => PoseSync.Draft, v => _poses?.SetDraft(v)),
                 Slider("Haptics", 0f, 1f, 100f, "%", () => VrHand.HapticGain, v => VrHand.HapticGain = v, () => true),
@@ -448,7 +458,7 @@ namespace DazVrBridge
                 Button("Resync everything", () => _desk?.ResyncAll(), () => Ready && !DeskSync.Rendering),
                 Button("Rebuild the scene", () => _loader?.RequestScene(), () => Ready && _loader && !_loader.Busy),
                 Button("Capture a take", () => _takes?.Capture(), () => _takes && _takes.CanCapture),
-            };
+            });
             for (var i = 0; i < PoseTakes.SlotCount; i++)
             {
                 var slot = i;

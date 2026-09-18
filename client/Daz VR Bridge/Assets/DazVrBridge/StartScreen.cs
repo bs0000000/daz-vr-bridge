@@ -37,6 +37,10 @@ namespace DazVrBridge
         [Tooltip("Dial as soon as the app starts, using the saved settings, instead of waiting for Connect.")]
         public bool autoConnect;
 
+        /// True while the screen is up on the monitor waiting for somebody. The headset
+        /// cannot show a screen-space canvas, so the HUD says where to look instead.
+        public bool Waiting => _canvas && _canvas.gameObject.activeSelf;
+
         Canvas _canvas;
         TMP_InputField _host, _port, _code, _texMax, _region;
         TMP_Dropdown _textures, _influences, _found;

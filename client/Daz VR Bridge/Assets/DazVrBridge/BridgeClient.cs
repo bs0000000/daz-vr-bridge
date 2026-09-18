@@ -50,8 +50,20 @@ namespace DazVrBridge
         Thread _reader;
         long _seq;
         readonly SecureChannel _channel = new SecureChannel();
+        readonly string _clientName;
+        readonly string _deviceName;
 
-        public BridgeClient(string role) { Role = role; }
+        // Read once, here, because the constructor runs on the main thread and the
+        // reader loop does not. Unity's SystemInfo and Application are main-thread only
+        // -- SystemInfo.deviceName throws outright -- and an exception thrown inside the
+        // reader is caught as a connection failure, so the whole session dies with a
+        // message about threads instead of connecting.
+        public BridgeClient(string role)
+        {
+            Role = role;
+            _clientName = $"unity {Application.unityVersion}";
+            _deviceName = SystemInfo.deviceName;
+        }
 
         public void Connect(string host, int port, string pairingCode = null, string session = null,
                             string token = null)
@@ -130,7 +142,7 @@ namespace DazVrBridge
                     ["t"] = "hello",
                     ["protocol"] = BridgeFrame.ProtocolVersion,
                     ["role"] = Role,
-                    ["client"] = $"unity {Application.unityVersion}",
+                    ["client"] = _clientName,
                     ["crypto"] = "v1",
                 };
                 if (haveToken) hello["token"] = token;
@@ -210,7 +222,7 @@ namespace DazVrBridge
                 ["t"] = "secure.key",
                 ["k"] = Convert.ToBase64String(sealed_),
                 ["nonce_c"] = Convert.ToBase64String(clientNonce),
-                ["client"] = SystemInfo.deviceName,
+                ["client"] = _deviceName,
             });
             lock (_sendLock) _channel.Arm(premaster, clientNonce, serverNonce, false);
             Array.Clear(premaster, 0, premaster.Length);
