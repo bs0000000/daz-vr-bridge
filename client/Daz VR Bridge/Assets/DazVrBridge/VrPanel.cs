@@ -13,6 +13,13 @@
 // under your cursor, and it comes back in front of you if you turn away or walk off,
 // because a panel you have to go and look for is worse than no panel at all.
 //
+// Where it opens is a guess, and guesses are sometimes wrong -- behind the figure, off
+// to one side, in the way of the shot. The blue bar along the top is there to be
+// grabbed: pull the trigger on it and the board follows the ray, pushing away and
+// pulling in as the hand does, always turned to face you. Placing it deliberately also
+// switches the coming-back-to-you off, because a panel that slides away from where it
+// was just put is worse than one that opened in the wrong place.
+//
 // This file knows nothing about Daz. It draws rows and reports clicks; PanelMenu says
 // what the rows are.
 
@@ -59,6 +66,9 @@ namespace DazVrBridge
 
         // Panel units are centimetres at life size, the same convention as the wheel.
         const float W = 30f;
+        // The bar. Thick enough to be an easy target at arm's length, which is the whole
+        // job: it is not decoration, it is the handle.
+        const float BarH = 2.6f;
         const float Pad = 1.2f;
         const float TitleH = 5.2f;
         const float TabH = 4.4f;
@@ -72,7 +82,11 @@ namespace DazVrBridge
         const float TrackRight = W * 0.5f - 1.4f;
         const float TrackLeft = -W * 0.5f + 14.6f;
 
+        const int Bar = -6;     // what Which() returns for the grab bar
+
         static readonly Color Back = new Color(0.05f, 0.07f, 0.10f, 0.94f);
+        static readonly Color BarIdle = new Color(0.36f, 0.74f, 0.87f, 0.95f);
+        static readonly Color BarHot = new Color(0.62f, 0.93f, 1f, 1f);
         static readonly Color RowIdle = new Color(0.10f, 0.13f, 0.18f, 0.92f);
         static readonly Color RowOn = new Color(0.10f, 0.30f, 0.34f, 0.94f);
         static readonly Color RowHot = new Color(0.16f, 0.62f, 0.72f, 0.96f);
@@ -87,7 +101,7 @@ namespace DazVrBridge
         int _tab;
 
         Transform _root;
-        Renderer _back, _cursor;
+        Renderer _back, _cursor, _bar;
         TextMeshPro _title;
         readonly Renderer[] _tabChip = new Renderer[MaxTabs];
         readonly TextMeshPro[] _tabText = new TextMeshPro[MaxTabs];
@@ -109,6 +123,13 @@ namespace DazVrBridge
         float _settle;                  // seconds left of the glide to a new anchor
         Vector3 _wantPos;
         Quaternion _wantRot;
+
+        // Carrying the board by its bar.
+        bool _carrying;
+        bool _placed;                   // put somewhere on purpose: stop following the head
+        float _carryDistance;           // along the ray, so a wrist flick does not fling it
+        Vector3 _carryFrom;             // where the hand was last frame
+        Vector2 _carryGrip;             // where on the bar it was taken, in panel units
 
         void Awake()
         {
@@ -132,6 +153,8 @@ namespace DazVrBridge
             _tab = 0;
             _hover = -1;
             _drag = null;
+            _carrying = false;
+            _placed = false;
             IsOpen = true;
             _title.text = title;
             _root.gameObject.SetActive(true);
@@ -160,7 +183,7 @@ namespace DazVrBridge
                 if (built != null)
                     for (var i = 0; i < built.Count && i < MaxRows; i++) _rows.Add(built[i]);
             }
-            _height = Pad + TitleH + (_tabs.Count > 1 ? TabH : 0f) + 0.6f + _rows.Count * RowStep + Pad;
+            _height = BarH + Pad + TitleH + (_tabs.Count > 1 ? TabH : 0f) + 0.6f + _rows.Count * RowStep + Pad;
             Layout();
             for (var i = 0; i < MaxRows; i++) _shownValue[i] = null;
         }
@@ -203,7 +226,7 @@ namespace DazVrBridge
             var toPanel = _root.position - head.transform.position;
             var far = toPanel.magnitude > 1.6f * scale || toPanel.magnitude < 0.25f * scale;
             var behind = Vector3.Angle(head.transform.forward, toPanel) > 65f;
-            if ((far || behind) && _settle <= 0f && _drag == null)
+            if ((far || behind) && _settle <= 0f && _drag == null && !_carrying && !_placed)
                 Anchor(head.transform.position + head.transform.forward * (0.62f * scale), false);
 
             if (_settle > 0f)
@@ -234,6 +257,21 @@ namespace DazVrBridge
             // trigger is how you delete something you were only looking at.
             if (VrHand.UiBlocked) { Unblock(); _hover = -1; ShowBeam(false); return; }
 
+            // Carrying bypasses the hit test entirely: the board is moving, and testing
+            // the ray against a surface that is being dragged by that same ray is a loop.
+            if (_carrying)
+            {
+                if (_pointer && _pointer.TriggerHeld)
+                {
+                    // Still the panel's trigger, not the scene's.
+                    _pointer.PointerBlocked = true;
+                    Carry();
+                    return;
+                }
+                _carrying = false;
+                _pointer?.Pulse(0.35f, 0.02f);
+            }
+
             var hand = Choose(out var local);
             if (hand == null)
             {
@@ -260,6 +298,10 @@ namespace DazVrBridge
             {
                 if (!hand.TriggerHeld) { EndDrag(); }
                 else Slide(local.x);
+            }
+            else if (hand.TriggerPressed && _hover == Bar)
+            {
+                TakeBar(hand, local);
             }
             else if (hand.TriggerPressed && _hover != -1)
             {
@@ -299,10 +341,13 @@ namespace DazVrBridge
             return Mathf.Abs(local.x) <= W * 0.5f + 1f && local.y <= 1f && local.y >= -_height - 1f;
         }
 
-        // Row index, or -2-n for tab n, or -1 for the title bar and the gaps.
+        // Row index, Bar for the grab bar, -2-n for tab n, or -1 for everything else.
         int Which(Vector2 local)
         {
-            var top = -Pad - TitleH;
+            // The slack above the top edge counts as the bar: it is the one control
+            // here you reach for without looking, and it is at the edge of the board.
+            if (local.y <= 1f && local.y >= -BarH) return Bar;
+            var top = -BarH - Pad - TitleH;
             if (_tabs.Count > 1)
             {
                 if (local.y <= top && local.y >= top - TabH)
@@ -326,8 +371,50 @@ namespace DazVrBridge
 
         bool Live(int target)
         {
+            if (target == Bar) return true;
             if (target <= -2) return true;
             return target >= 0 && target < _rows.Count && _rows[target].Live;
+        }
+
+        // Taking the board by its bar. The grip point is remembered in panel units so
+        // the bar stays under the cursor rather than snapping its centre there.
+        void TakeBar(VrHand hand, Vector2 local)
+        {
+            if (!hand.AimRay(out var ray)) return;
+            _pointer = hand;
+            _carrying = true;
+            _placed = true;
+            _settle = 0f;
+            _carryGrip = local;
+            _carryDistance = Vector3.Distance(ray.origin, _root.TransformPoint(new Vector3(local.x, local.y, 0f)));
+            _carryFrom = ray.origin;
+            hand.Pulse(0.45f, 0.03f);
+        }
+
+        void Carry()
+        {
+            var head = Camera.main;
+            if (!head || !_pointer.AimRay(out var ray)) return;
+            var scale = _rig ? _rig.Scale : 1f;
+
+            // Pushing the hand along the ray pushes the board away, pulling it back
+            // brings it in. Without this the only way to change the distance would be
+            // to walk, and a board at the wrong depth is as awkward as one in the wrong
+            // direction.
+            _carryDistance = Mathf.Clamp(
+                _carryDistance + Vector3.Dot(ray.origin - _carryFrom, ray.direction),
+                0.28f * scale, 2.5f * scale);
+            _carryFrom = ray.origin;
+
+            var target = ray.origin + ray.direction * _carryDistance;
+            var facing = Quaternion.LookRotation(target - head.transform.position, Vector3.up);
+            _root.rotation = facing;
+            _root.localScale = Vector3.one * (0.01f * scale);
+            // Put the grabbed point of the bar exactly where the ray lands.
+            _root.position = target - _root.TransformVector(new Vector3(_carryGrip.x, _carryGrip.y, 0f));
+
+            ShowBeam(true, _pointer, _carryGrip);
+            Draw();
         }
 
         void Activate(int target, float x, VrHand hand)
@@ -407,6 +494,8 @@ namespace DazVrBridge
 
         void Draw()
         {
+            Tint(_bar, _carrying || _hover == Bar ? BarHot : BarIdle);
+
             for (var i = 0; i < MaxTabs; i++)
             {
                 var on = i < _tabs.Count && _tabs.Count > 1;
@@ -507,20 +596,23 @@ namespace DazVrBridge
             _back.transform.localPosition = new Vector3(0f, -_height * 0.5f, 0.1f);
             _back.transform.localScale = new Vector3(W + 1.6f, _height, 1f);
 
-            _title.transform.localPosition = new Vector3(0f, -Pad - TitleH * 0.5f, -0.05f);
+            _bar.transform.localPosition = new Vector3(0f, -BarH * 0.5f, 0.05f);
+            _bar.transform.localScale = new Vector3(W + 1.6f, BarH, 1f);
+
+            _title.transform.localPosition = new Vector3(0f, -BarH - Pad - TitleH * 0.5f, -0.05f);
 
             var tabWidth = (W - 2f * Pad) / Mathf.Max(1, _tabs.Count);
             for (var i = 0; i < MaxTabs; i++)
             {
                 var x = -W * 0.5f + Pad + tabWidth * (i + 0.5f);
-                var y = -Pad - TitleH - TabH * 0.5f;
+                var y = -BarH - Pad - TitleH - TabH * 0.5f;
                 _tabChip[i].transform.localPosition = new Vector3(x, y, 0f);
                 _tabChip[i].transform.localScale = new Vector3(Mathf.Max(1f, tabWidth - 0.6f), TabH - 0.8f, 1f);
                 _tabText[i].transform.localPosition = new Vector3(x, y, -0.05f);
                 _tabText[i].rectTransform.sizeDelta = new Vector2(tabWidth - 1.4f, 1.7f);
             }
 
-            _rowTop = -Pad - TitleH - tabs - 0.6f;
+            _rowTop = -BarH - Pad - TitleH - tabs - 0.6f;
             for (var i = 0; i < MaxRows; i++)
             {
                 var y = RowCentre(i);
@@ -539,6 +631,8 @@ namespace DazVrBridge
 
             _back = Quad(_root, "back", material);
             Tint(_back, Back);
+
+            _bar = Quad(_root, "bar", material);
 
             _title = Text(_root, "title", W - 2f * Pad, 2.4f, TextAlignmentOptions.Left);
             _title.fontStyle = FontStyles.Bold;

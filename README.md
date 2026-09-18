@@ -114,6 +114,12 @@ choice steps forward or back depending on which half of the readout you click. I
 switching tab never moves the title out from under the cursor, and it comes back in front of you if you walk
 off or turn around.
 
+Where it opens is a guess, and guesses are sometimes wrong -- behind the figure, off to one side, in the way
+of the shot. The blue bar along the top is the handle: pull the trigger on it and the board follows the ray,
+pushing away and pulling in as your hand does, always turned to face you. Placing it deliberately also stops
+it coming back to you, because a board that slides away from where it was just put is worse than one that
+opened in the wrong place. Closing and reopening gives you a fresh guess.
+
 Pointing at a scene object opens that object's panel: select it in Daz, resync it (a figure resyncs its pose,
 everything else its transform), walk over to it, hide it, delete it (twice, and Daz's undo covers it). Hiding
 takes an object's colliders with it, which also takes away the only way to point at it again, so the session
