@@ -67,6 +67,14 @@ so a Daz that restarts is picked up without anyone pressing anything again. It g
 drops. The same five bake options are on the panel's Scene tab in the headset, so a texture size can be
 changed without going back to the desk.
 
+**Lighting** is the client's own, because it cannot rely on anybody else's. The Unity scene carries no lights,
+a Daz scene lit by an Iray environment brings none either, and skybox ambient needs a baked probe that is
+editor-fresh in the editor and whatever shipped in a player -- so "it looked fine yesterday" and "the build is
+dark" were the same scene. Ambient is now set explicitly at runtime, and a three-point rig switches itself on
+when the Daz scene brought no lights of its own. Both are on the panel's Session tab. Runtime lights cannot be
+stripped from a build and need no bake, which is the point: this is about being the same every time, not about
+being pretty.
+
 ## VR controls
 
 - **Trigger:** grab a bone or scene object. Inside the wheel, a tap applies a toggle or opens a page without closing.

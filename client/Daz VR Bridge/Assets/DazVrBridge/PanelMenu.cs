@@ -37,6 +37,7 @@ namespace DazVrBridge
         NodeSync _nodes;
         PoseTakes _takes;
         VrMenu _wheel;
+        SceneLighting _lighting;
 
         SceneLoader.LoadedNode _node;         // what the object panel is about
         SceneLoader.LoadedFigure _figure;
@@ -71,6 +72,7 @@ namespace DazVrBridge
             _nodes = FindAnyObjectByType<NodeSync>();
             _takes = FindAnyObjectByType<PoseTakes>();
             _wheel = FindAnyObjectByType<VrMenu>();
+            _lighting = FindAnyObjectByType<SceneLighting>();
             _panel = FindAnyObjectByType<VrPanel>();
             if (!_panel) _panel = gameObject.AddComponent<VrPanel>();
         }
@@ -510,6 +512,17 @@ namespace DazVrBridge
             {
                 Toggle("Draft (nothing reaches Daz)", () => PoseSync.Draft, v => _poses?.SetDraft(v)),
                 Slider("Haptics", 0f, 1f, 100f, "%", () => VrHand.HapticGain, v => VrHand.HapticGain = v, () => true),
+                // The client's own lights. Off means the Daz scene's lights, or nothing
+                // -- which on an Iray scene lit by an environment is nothing at all.
+                Toggle("Light the scene", () => _lighting && _lighting.fill != SceneLighting.Fill.Never,
+                    on =>
+                    {
+                        if (!_lighting) return;
+                        _lighting.fill = on ? SceneLighting.Fill.Auto : SceneLighting.Fill.Never;
+                        _lighting.Apply();
+                    }),
+                Slider("Brightness", 0f, 2f, 50f, "", () => _lighting ? _lighting.key : 0f,
+                    v => { if (_lighting) { _lighting.key = v; _lighting.Apply(); } }, () => _lighting),
                 Button("Life size", LifeSize, () => _rig, () => (_rig ? _rig.Scale : 1f).ToString("0.00") + "x"),
                 Button("Resync everything", () => _desk?.ResyncAll(), () => Ready && !DeskSync.Rendering),
                 Button("Capture a take", Capture, () => _takes && _takes.CanCapture),

@@ -71,6 +71,7 @@ namespace DazVrBridge
             if (!FindAnyObjectByType<VrMenu>()) gameObject.AddComponent<VrMenu>();
             if (!FindAnyObjectByType<VrPanel>()) gameObject.AddComponent<VrPanel>();
             if (!FindAnyObjectByType<PanelMenu>()) gameObject.AddComponent<PanelMenu>();
+            if (!FindAnyObjectByType<SceneLighting>()) gameObject.AddComponent<SceneLighting>();
         }
 
         void Start()
