@@ -1,3 +1,7 @@
+> **Superseded.** The backlog now lives in Linear; see `docs/tickets/README.md` for the
+> workspace shape and `docs/tickets/backlog.csv` for every open item, written as tickets.
+> This file is kept as the record of where the list came from.
+
 # Bugs and missing
 - [done] Geoshell are breaking the shapes in Unity (looks like the character has a ghost hallowing costume, and it doesn't render). Daz is running with one of them (Nadine 9 has G9WT Wet Geoshell Map WB6 High Density Drops geoshell)
 - [done] Starting screen (needs an option menu, connection informations and different tools if we have)

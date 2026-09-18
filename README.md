@@ -192,3 +192,6 @@ some other reason.
 - **A Genesis 8 profile.**
 - A better hand: the controller's own model, with what each button does written on it.
 - See the backlog assessment for the rest: https://claude.ai/code/artifact/8f07cacf-be1c-49c6-8ceb-126895047f1f
+
+The backlog above is kept here as a summary. The tickets themselves live in Linear -- `docs/tickets/README.md`
+has the workspace shape, the working loop, and the backlog as an importable file.

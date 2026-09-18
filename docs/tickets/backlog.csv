@@ -1,0 +1,221 @@
+Title,Description,Status,Priority,Labels,Project
+Takes: say what the photoshoot loop should actually feel like,"**Why**
+The loop was built from one sentence of description and landed working but wrong -- ""it's working but not the way I was thinking"". Nothing more should be built on it until the intended shape is written down.
+
+**Today**
+Capture stores the whole scene and persists per Daz scene. The panel's Takes tab lists them newest-first with a page each: recall, delete, save as a Daz pose preset. The wheel keeps three quick slots counting back from the newest.
+
+**Done when**
+- [ ] The expected flow is written in this ticket: what you press, what you see, what you get
+- [ ] Each way the current build differs from that is listed
+- [ ] Each difference is either fixed or spun into its own ticket
+
+**Where**
+`client/Daz VR Bridge/Assets/DazVrBridge/PoseTakes.cs`, `PanelMenu.cs` (TakeRows/TakePage), `plugin/pose_export.cpp`",Backlog,High,"type:feature,area:ux,blocked:needs-input",Posing
+Thumbnails on takes,"**Why**
+A list of times is not a review. Picking the take you meant means seeing it.
+
+**Today**
+Takes show a capture time and a figure count. Choosing between six of them means recalling each in turn.
+
+**Done when**
+- [ ] Each take stores a small render of the scene, captured at the moment of capture
+- [ ] The Takes tab shows it beside the name
+- [ ] Thumbnails live with the take on disk and survive a restart
+
+**Where**
+`PoseTakes.cs` (Capture, the disk format), `PanelMenu.cs` (TakeRows)",Backlog,Medium,"type:feature,area:client",Posing
+Finger posing from the Index controllers,"**Why**
+The controllers already feel every finger and nothing here reads it. Hand poses are the fiddliest thing to do at a desk and the most natural thing to do in a headset.
+
+**Today**
+Hands are posed bone by bone like any other limb. Finger bones are small and the handles crowd each other.
+
+**Done when**
+- [ ] Skeletal input is read from the runtime where it is offered
+- [ ] Finger curls drive the figure's finger bones live
+- [ ] A grip on the hand switches finger tracking off, so grabbing does not close the figure's fist
+- [ ] It degrades quietly on controllers that do not report fingers
+
+**Where**
+`VrHand.cs` (input actions), `BoneHandles.cs`, a new finger solver",Backlog,High,"type:feature,area:client",Posing
+"A pose library: a few favourites, reachable in VR","**Why**
+Not all of Daz's poses -- a chosen few. One sitting, one standing, one lying down, as a starting point to work away from rather than building every pose from bind.
+
+**Today**
+Poses are applied at the desk before putting the headset on.
+
+**Done when**
+- [ ] A way to mark poses as favourites (a folder under the library is enough)
+- [ ] The plugin lists them
+- [ ] A panel tab shows them and applies one to the aimed figure
+- [ ] Applying is one Daz undo step
+
+**Where**
+New plugin message alongside `pose.export`; `PanelMenu.cs` for the tab",Backlog,Medium,"type:feature,area:plugin,area:client",Posing
+Mirror posing,"**Why**
+Deferred since phase 4. Mirroring a pose left-to-right is a standard posing operation and the one thing the tool still cannot do that a desk can.
+
+**Today**
+Nothing. The reflection convention is unknown: which axis Daz mirrors about, and how bone orientations and joint limits transform with it.
+
+**Done when**
+- [ ] A scene with a deliberately mirrored pose is supplied, so the convention is measured rather than guessed
+- [ ] Mirroring a figure's pose produces the same result Daz's own mirror does, within a degree
+- [ ] It is one undo step
+
+**Where**
+`client/.../DazEuler.cs`, `RigProfile.cs`",Backlog,Medium,"type:feature,area:client,blocked:needs-input",Posing
+Genesis 8 profile,"**Why**
+Genesis 9 was first on purpose. Genesis 8 is still most of the content people own.
+
+**Today**
+`RigProfile` describes Genesis 9's chains and limits. A G8 figure loads and poses by FK but its IK chains and clavicle behaviour are unverified.
+
+**Done when**
+- [ ] A Genesis 8 profile with its IK chains, twist bones and clavicle share
+- [ ] A G8 figure poses with the same feel as a G9 one
+- [ ] The self-test passes on a G8 figure
+
+**Where**
+`client/.../RigProfile.cs`",Backlog,Medium,"type:feature,area:client",Posing
+Timeline navigation,"**Why**
+Posing is currently a single moment. Daz has a timeline and this tool ignores it.
+
+**Today**
+Every commit writes the current frame. There is no way to move between frames from VR.
+
+**Done when**
+- [ ] Move backward and forward a frame from in VR
+- [ ] Save a key at the current frame
+- [ ] A key registers the WHOLE object by default, not one channel
+- [ ] The current frame is visible without taking the headset off
+
+**Where**
+New plugin messages for frame position and keying; `DeskSync.cs` and a panel tab or wheel page",Backlog,High,"type:feature,area:plugin,area:client",Posing
+Tools management: decide what a button means,"**Why**
+There are more things to do than there are buttons, and each new feature has been squeezed into whatever was still free. That does not scale, and it is why bindings are getting hard to remember.
+
+**Today**
+Trigger grabs, grip moves the world, A opens the panel, B holds the wheel, X and Y undo and redo, A-while-holding passes through bodies. Every one of those is fixed forever.
+
+**Done when**
+- [ ] A way to say what you are trying to do right now, so the same button can mean different things on purpose
+- [ ] The current mode is visible without reading anything
+- [ ] Switching mode is faster than opening the panel
+- [ ] Existing bindings keep working in the mode they belong to
+
+**Where**
+`VrHand.cs`, `VrMenu.cs`, `PanelMenu.cs`, `BindingLabels.cs`",Backlog,High,"type:feature,area:ux",UI & controls
+Prop parameters: open the doors,"**Why**
+Props carry their own properties in Daz -- a door's open angle, a drawer's slide. They are how a set is actually used, and none of them are reachable from VR.
+
+**Today**
+A prop can be moved and rotated. Anything the prop itself drives is invisible.
+
+**Done when**
+- [ ] The plugin lists a node's own numeric properties with their ranges
+- [ ] The object panel shows them as sliders
+- [ ] Changing one is one Daz undo step
+- [ ] Properties that are driven by something else are shown but not editable
+
+**Where**
+Plugin: a node.properties message; `PanelMenu.cs` NodeTabs",Backlog,Medium,"type:feature,area:plugin,area:client",Scene & performance
+A scene with an identity,"**Why**
+The Unity side is an empty scene with a grid in it. It reads as a void with people standing in it, which makes judging a pose harder and the product look unfinished.
+
+**Today**
+No ground, no horizon, no lighting of its own beyond what the Daz scene brings.
+
+**Done when**
+- [ ] A ground and a horizon that read as a place
+- [ ] Lighting that flatters a figure without fighting the Daz scene's own lights
+- [ ] It costs nothing measurable in frame rate
+- [ ] It can be turned off for a scene that brings its own environment
+
+**Where**
+The Unity scene, and `SceneLoader.cs` for the switch",Backlog,Medium,"type:feature,area:client",Scene & performance
+"A UI pass: icons, and a look at the whole thing","**Why**
+There is now enough UI to judge as a whole, and it grew a piece at a time. Some of it is words where an icon would read faster, and none of it was designed together.
+
+**Today**
+A radial wheel, a pointed panel with four tabs, floating binding labels, a HUD, and a desktop setup screen. All built in code, all styled independently.
+
+**Done when**
+- [ ] Icons where a word is slower to read than a shape
+- [ ] One set of colours and sizes across the wheel, the panel and the HUD
+- [ ] A pass for legibility at arm's length in a headset, not on a monitor
+
+**Where**
+`VrMenu.cs`, `VrPanel.cs`, `BindingLabels.cs`, `BridgeHud.cs`, `StartScreen.cs`",Backlog,Medium,"type:chore,area:ux",UI & controls
+"Scoped scene: work on a slice, in miniature","**Why**
+A thousand-prop set is five frames a second in Daz and no better in VR. Seeing a chosen volume of it, on a table in front of you, would make heavy scenes workable -- and would be a genuinely different way to pose.
+
+**Today**
+The region radius already withholds geometry outside a volume, which solves the performance half. The miniature and the third-person view do not exist.
+
+**Done when**
+- [ ] A chosen volume of the scene, shown at a workable size in front of you
+- [ ] A way to move between the miniature and standing in the scene
+- [ ] Posing works the same in both
+
+**Where**
+`plugin/scene_bake.cpp` already has the region filter",Backlog,Low,"type:idea,area:client",Scene & performance
+Better hands: the controller's own model,"**Why**
+The hand is a small box. A recognisable controller with its buttons marked would make the bindings legible without a separate label floating beside it.
+
+**Today**
+A 3 cm box, drawn as an overlay so it never disappears inside a limb.
+
+**Done when**
+- [ ] The runtime's own controller model where it offers one
+- [ ] What each button does, written on the button
+- [ ] It still draws over the figure rather than inside it
+
+**Where**
+`VrHand.cs`, `BindingLabels.cs`",Backlog,Low,"type:feature,area:client",UI & controls
+Daz preview streaming,"**Why**
+Kept for the record, and deliberately not started: judged the wrong shape for this tool. A streamed viewport is fine for a glance and wrong as the way to see your work.
+
+**Today**
+Not started. The camera panel renders properly through Daz instead, which is the answer for anything that matters.
+
+**Done when**
+- [ ] Only if a use appears that the camera render does not cover",Backlog,Low,"type:idea,area:plugin",Scene & performance
+"A standalone build, and an honest frame rate","**Why**
+Everything has been measured in the editor. The editor is also the only place editor-only bugs hide -- the overlay shader was one of those, found because a shader that was not in Resources would have vanished in a player.
+
+**Today**
+No player build has ever been made.
+
+**Done when**
+- [ ] A standalone player build that runs
+- [ ] A frame-rate number from the two-machine setup, measured in the player
+- [ ] Whatever the build turns up, fixed or ticketed
+
+**Where**
+Unity build settings; `client/.../Resources/` for anything loaded by name",Backlog,High,"type:chore,area:client",Release readiness
+Hull texturing for strand hair,"**Why**
+The hair approximation shows as a flat shape. It reads as hair in outline and as plastic up close.
+
+**Today**
+Hulls are built from the strand cloud and take the surface colour, but their UVs are spherical so textures are dropped on purpose.
+
+**Done when**
+- [ ] Either a UV scheme the hair's own texture survives, or a shading treatment that reads as hair without one
+- [ ] It stays optional, as the hulls themselves are
+
+**Where**
+`plugin/hull_proxy.cpp`",Backlog,Low,"type:feature,area:plugin",Scene & performance
+Relinking the plugin needs Daz closed,"**Why**
+Every plugin change needs Daz shut down before it can be linked, because Daz holds the DLL open. It has cost a rebuild cycle on nearly every plugin commit this project has made.
+
+**Today**
+The build compiles fine and fails at LNK1168 whenever Daz is running.
+
+**Done when**
+- [ ] Either a build step that stops and restarts Daz, or a documented one-key routine
+- [ ] Written down where whoever builds this next will find it
+
+**Where**
+`plugin/CMakeLists.txt`, the README's build section",Backlog,Low,"type:chore,area:plugin",Release readiness
