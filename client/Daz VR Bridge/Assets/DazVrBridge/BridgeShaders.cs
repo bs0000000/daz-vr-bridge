@@ -3,14 +3,18 @@
 // Shader.Find searches what was BUILT. In the editor that is every shader in the project,
 // so it always works; in a player it is only what something in a built scene referenced,
 // plus whatever is listed in Graphics settings. A URP shader that is only ever named in a
-// string at runtime is in neither list, so Shader.Find returns null, and `new Material(null)`
-// is either a magenta object or an exception -- and an exception in the middle of building
-// a scene takes the rest of the scene with it.
+// string at runtime is in neither list, so Shader.Find returns null -- and a null shader
+// is a magenta object, or an exception that takes the rest of the scene build with it.
 //
-// This is the second time that has bitten: the handle overlay shader went into Resources
-// for the same reason. So the lookups live here, they never return null, and they say so
-// loudly once when they have had to fall back -- because a silently wrong material is how
-// this cost an evening.
+// The fix is a material ASSET under Resources. Anything in Resources ships by
+// construction, the material carries the shader with it, and -- unlike a line in
+// ProjectSettings/GraphicsSettings.asset -- it is a file Unity imports when it appears
+// rather than a setting a running editor holds in memory and writes back over the top of.
+// That distinction cost a build: the always-included entries were on disk and the player
+// was still missing the shader.
+//
+// Third time for this class of bug. The handle overlay went into Resources for the same
+// reason, so that is where the rest of them live now too.
 
 using UnityEngine;
 
@@ -18,52 +22,67 @@ namespace DazVrBridge
 {
     public static class BridgeShaders
     {
-        static Shader _lit, _unlit;
+        static Material _lit, _unlit;
         static bool _warned;
 
-        /// A lit surface shader. URP's Lit where it survived into the build.
-        public static Shader Lit()
-        {
-            if (_lit) return _lit;
-            _lit = Shader.Find("Universal Render Pipeline/Lit")
-                ?? Shader.Find("Standard")
-                ?? Fallback();
-            return _lit;
-        }
+        /// A lit surface material, fresh each call. URP's Lit.
+        public static Material Lit(string name) => Clone(ref _lit, "BridgeLit", name, false);
 
-        /// An unlit shader, for anything that carries its own image: a camera's
+        /// An unlit material, for anything carrying its own image: a camera's
         /// picture-in-picture, a readout, a marker.
-        public static Shader Unlit()
+        public static Material Unlit(string name) => Clone(ref _unlit, "BridgeUnlit", name, true);
+
+        /// For the few places that genuinely want a Shader rather than a Material.
+        public static Shader LitShader()
         {
-            if (_unlit) return _unlit;
-            _unlit = Shader.Find("Universal Render Pipeline/Unlit")
-                ?? Shader.Find("Unlit/Texture")
-                ?? Fallback();
-            return _unlit;
+            var template = Template(ref _lit, "BridgeLit", false);
+            return template ? template.shader : Fallback();
         }
 
-        /// Makes a material without ever handing a null shader to the constructor.
-        public static Material Material(Shader shader, string name)
+        static Material Clone(ref Material cached, string resource, string name, bool unlit)
         {
-            var material = new Material(shader ? shader : Fallback()) { name = name };
-            return material;
+            var template = Template(ref cached, resource, unlit);
+            return template
+                ? new Material(template) { name = name }
+                : new Material(Fallback()) { name = name };
         }
 
-        // The overlay shader is in Resources, so it is in every build by construction.
-        // It is the wrong look for a figure and the right answer for not crashing.
+        static Material Template(ref Material cached, string resource, bool unlit)
+        {
+            if (cached) return cached;
+
+            // The asset first, because it is the one that survives a build.
+            cached = Resources.Load<Material>(resource);
+            if (cached && cached.shader) return cached;
+
+            // Then the name, which works in the editor and in a build where something
+            // else happened to pull the shader in.
+            var shader = Shader.Find(unlit ? "Universal Render Pipeline/Unlit" : "Universal Render Pipeline/Lit")
+                      ?? Shader.Find(unlit ? "Unlit/Texture" : "Standard");
+            if (shader) cached = new Material(shader) { name = resource };
+            else Warn(resource);
+            return cached;
+        }
+
+        // The overlay shader is in Resources too, so it is in every build. It has one
+        // colour and no texture, which is the wrong look for anything and the right
+        // answer for not crashing -- a grey rectangle where a camera preview should be
+        // is this fallback, doing its job.
         static Shader Fallback()
         {
             var shader = Resources.Load<Shader>("HandleOverlay");
-            if (!_warned)
-            {
-                _warned = true;
-                Debug.LogWarning(shader
-                    ? "[DazVrBridge] A shader was missing from this build and the overlay shader is standing in. " +
-                      "Add Universal Render Pipeline/Lit and /Unlit to Project Settings > Graphics > Always Included Shaders."
-                    : "[DazVrBridge] No shader could be found at all, including the overlay shader in Resources. " +
-                      "Materials will render magenta.");
-            }
+            if (!shader) Debug.LogError("[DazVrBridge] No shader at all, including the overlay shader in Resources.");
             return shader;
+        }
+
+        static void Warn(string resource)
+        {
+            if (_warned) return;
+            _warned = true;
+            Debug.LogWarning(
+                $"[DazVrBridge] {resource}.mat is missing from Resources and the shader could not be found by name, " +
+                "so the overlay shader is standing in: expect flat grey where a texture should be. " +
+                "Check that Assets/DazVrBridge/Resources/" + resource + ".mat imported.");
         }
     }
 }

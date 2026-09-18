@@ -84,7 +84,11 @@ namespace DazVrBridge
             _pip.SetParent(transform, false);
             _pip.localScale = new Vector3(pipWidth, pipWidth / Aspect, 1f);
             _pip.localPosition = new Vector3(0f, pipHeightAbove, 0f);
-            var mat = BridgeShaders.Material(BridgeShaders.Unlit(), "pip");
+            var mat = BridgeShaders.Unlit("pip");
+            // Both names: URP's Unlit calls it _BaseMap, the legacy fallback _MainTex,
+            // and mainTexture only maps to whichever the shader marks as its main one.
+            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", _rt);
+            if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", _rt);
             mat.mainTexture = _rt;
             quad.GetComponent<Renderer>().sharedMaterial = mat;
         }

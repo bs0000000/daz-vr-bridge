@@ -887,7 +887,7 @@ namespace DazVrBridge
 
             for (var i = 0; i < groups.Count; i++)
             {
-                var m = clayMaterial ? new Material(clayMaterial) : BridgeShaders.Material(DefaultShader(), "surface");
+                var m = clayMaterial ? new Material(clayMaterial) : BridgeShaders.Lit("surface");
                 _ownedResources.Add(m);
                 var color = new Color(0.7f, 0.7f, 0.7f);
                 var matIndex = groups[i].Material;
@@ -998,6 +998,6 @@ namespace DazVrBridge
             m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         }
 
-        static Shader DefaultShader() => BridgeShaders.Lit();
+        static Shader DefaultShader() => BridgeShaders.LitShader();
     }
 }
