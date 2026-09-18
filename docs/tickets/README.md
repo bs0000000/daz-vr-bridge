@@ -47,9 +47,9 @@ performance`, `UI & controls`, `Session & networking`, `Release readiness`. The 
 empty on purpose — it is the part that currently works, and it is where "it will not
 connect" will land after release.
 
-**Triage.** Turn it on in the team's settings now, while the only thing arriving is your
-own thinking. After release it is where customer reports land, and it is easier to have
-been using it for months than to start when the first angry one shows up.
+**Triage.** On. Worth using now, while the only thing arriving is your own thinking:
+easier to have been living in it for months than to start when the first angry report
+shows up.
 
 ## 2 · The backlog
 
@@ -62,9 +62,8 @@ repo's own history, not because anything should read them again.
 
 ## 3 · Working with Claude
 
-**Connect Linear's MCP server** in Claude's connector settings (Linear's own docs carry
-the current endpoint). Until that is connected I cannot see a ticket, and you would have
-to paste its text; once it is, `DVB-12` is enough.
+Linear's MCP server is connected, so `DVB-12` is enough — I can read a ticket, its
+comments and its attachments, and write back to it.
 
 The loop:
 
@@ -73,8 +72,8 @@ The loop:
 3. If *Done when* is missing or ambiguous, I ask **before** writing code rather than
    building the wrong thing well.
 4. I implement, and reference `DVB-12` in the commit message.
-5. I move it to **Waiting for review** and comment what changed, what to rebuild (Unity,
-   plugin, or both), and what to look at in the headset.
+5. I move it to **In Review** and comment what changed, what to rebuild (Unity, plugin,
+   or both), and what to look at in the headset.
 6. You try it and either move it to Done or say what is wrong, in the ticket.
 
 **What makes a ticket I can take.** The *Done when* list. Not a description of the
@@ -90,7 +89,7 @@ when the conversation is.
 Triage is where reports land. The useful thing I can do there, which is worth setting up
 before it is needed:
 
-- **Sort.** Read what came in, put an `area:` and `type:` on it, flag duplicates.
+- **Sort.** Read what came in, put an area and a kind on it, flag duplicates.
 - **Pre-investigate.** Reproduce where a description allows it, find the cause, and
   comment with the file and the line. A ticket that arrives at you already diagnosed is a
   decision, not an afternoon.
