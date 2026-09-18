@@ -10,19 +10,19 @@ exactly that, without the code repository having to be public for strangers to w
 
 ---
 
-## 1 · Setting the workspace up
+## 1 · The workspace, as built
 
-**Team.** One team, `DVB` (Daz VR Bridge). Issue ids come out as `DVB-12`, which is what
-gets typed at Claude and written in commit messages.
+**Team.** `Daz VR Bridge`, key `DVB`. Issue ids come out as `DVB-12`, which is what gets
+typed at Claude and written in commit messages.
 
-**Workflow states.** Linear's defaults are close; two changes:
+**Workflow states.**
 
 | Group      | State                | What it means                                            |
 |------------|----------------------|----------------------------------------------------------|
 | Backlog    | `Backlog`            | Real, not scheduled                                       |
 | Unstarted  | `Ready for Claude`   | Written well enough to hand over: has *Done when*         |
 | Started    | `In progress`        | Being built right now                                     |
-| Started    | `Waiting for review` | Built and committed, waiting for the headset to say       |
+| Started    | `In Review`          | Built and committed, waiting for the headset to say       |
 | Completed  | `Done`               | Seen working                                              |
 | Cancelled  | `Cancelled`          | Decided against, with the reason in a comment             |
 
@@ -33,30 +33,32 @@ photoshoot loop that worked and was not what you pictured.
 
 **Labels.** Three axes, so triage can filter on any one:
 
-- `area:plugin` · `area:client` · `area:protocol` · `area:ux`
-- `type:bug` · `type:feature` · `type:idea` · `type:chore`
-- `blocked:needs-input` — cannot move without something only you can give (a scene, a
-  decision, a headset session). Worth its own label because these look stalled otherwise.
+- **Area** is a label *group*: `Plugin`, `Client`, `Protocol`, `UX`. Linear allows one
+  label per group, so every ticket has exactly one area — and `Protocol` is the honest
+  answer for anything that changes both ends at once, which is what it means.
+- **Kind**: `Bug`, `Feature`, `Improvement` (Linear's own) plus `Idea`, for what is worth
+  recording and not yet worth committing to.
+- **`Needs input`** — cannot move without something only you can give: a scene, a
+  decision, a session in the headset. Worth its own label because these look stalled
+  otherwise.
 
 **Projects.** Five, matching how the work actually clusters: `Posing`, `Scene &
-performance`, `UI & controls`, `Session & networking`, `Release readiness`.
+performance`, `UI & controls`, `Session & networking`, `Release readiness`. The fourth is
+empty on purpose — it is the part that currently works, and it is where "it will not
+connect" will land after release.
 
 **Triage.** Turn it on in the team's settings now, while the only thing arriving is your
 own thinking. After release it is where customer reports land, and it is easier to have
 been using it for months than to start when the first angry one shows up.
 
-## 2 · Importing the backlog
+## 2 · The backlog
 
-`backlog.csv` holds every open item from `TODOS.md` and the README backlog, written as
-tickets: why, what exists today, what *done* means, and which files it touches.
+Seventeen tickets, `DVB-1` to `DVB-17`, all in `Backlog`. Promote what you want next to
+`Ready for Claude`.
 
-Settings → Import / Export → Import → CSV. Linear asks you to map columns, so the header
-names here only have to be recognisable, not exact. Everything arrives in `Backlog`;
-promote what you want next to `Ready for Claude`.
-
-`backlog_source.py` is where the list actually lives — edit it and regenerate rather than
-hand-editing the CSV. After the import, Linear is the source of truth and both files are
-history.
+`backlog.csv` and `backlog_source.py` are how they got there and are now history: Linear
+is the source of truth. They are kept because the ticket bodies are worth having in the
+repo's own history, not because anything should read them again.
 
 ## 3 · Working with Claude
 
