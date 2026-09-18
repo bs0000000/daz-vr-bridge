@@ -98,7 +98,7 @@ the code. *Forget paired* in the pane rotates the secret and invalidates every t
 
 A client that does not know where Daz is broadcasts the ASCII line `DAZVRBRIDGE?1` to UDP `<port>`; every
 plugin that is listening and discoverable answers, unicast, with `DAZVRBRIDGE!1 ` followed by a compact JSON
-object: `{ host, port, plugin, protocol, pairing, scene, clients }`. The answer's **sender address** is what
+object: `{ id, host, port, plugin, protocol, pairing, scene, clients }`. `id` identifies the running Daz, because one plugin answers on every interface it has and the same machine would otherwise arrive two or three times — loopback, the real LAN, and whatever a container runtime left on the box. The client folds those together and dials the best route: loopback first, since that is literally this machine; then an address on one of its own networks that has a gateway; then one on a network without a gateway, which is what a container bridge looks like; and round-trip time breaks any tie. The answer's **sender address** is what
 the client dials — `host` is the machine's name, for the list, and a name that does not resolve is worse than
 useless when the point is to save someone typing an address.
 

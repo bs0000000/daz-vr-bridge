@@ -49,7 +49,9 @@ side. `tools/crypto_interop/run.ps1` checks the plugin's and the client's crypto
 vectors and against each other; neither end can be exercised in place, so that harness is the test.
 
 The setup screen finds Daz by itself: it broadcasts on the LAN every couple of seconds and lists whatever
-answers, by machine name and open scene. One answer fills the address in; two or more and the choice is yours,
+answers, by machine name and open scene. One Daz answers on every interface it has, so the answers are folded
+together by the instance id the plugin sends, and the address dialled is the best route to it -- loopback
+first, then a network of yours with a gateway, then one without, which is what a container bridge looks like. One answer fills the address in; two or more and the choice is yours,
 because guessing which Daz someone meant is how a scene gets posed on the wrong machine. Typing an address by
 hand turns the filling-in off. Daz answers only when asked, and the pane can stop it answering at all.
 

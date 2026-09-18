@@ -156,6 +156,10 @@ bool Server::start( quint16 port, QString* errorOut )
 	}
 
 	regeneratePairingCode();
+	if ( m_instanceId.isEmpty() )
+	{
+		m_instanceId = QUuid::createUuid().toString( QUuid::WithoutBraces ).left( 12 );
+	}
 	if ( m_tokenSecret.size() < 32 )
 	{
 		m_tokenSecret = randomBytes( 32 );
@@ -451,6 +455,10 @@ void Server::onProbe()
 		}
 
 		QJsonObject o;
+		// One Daz answers on every interface it has -- loopback, the LAN, whatever a
+		// container runtime left behind -- and without this the headset lists the same
+		// machine three times with no way to tell that it is one machine.
+		o[ "id" ] = m_instanceId;
 		o[ "host" ] = QHostInfo::localHostName();
 		o[ "port" ] = int( port() );
 		o[ "plugin" ] = pluginVersionString();

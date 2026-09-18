@@ -136,7 +136,7 @@ namespace DazVrBridge
             foreach (var server in servers)
             {
                 var found = server;
-                Entry(_foundList, found.Label, found == _picked, () =>
+                Entry(_foundList, found.Label + "   <size=75%>" + found.Detail + "</size>", found == _picked, () =>
                 {
                     Take(found);
                     _touchedHost = false;

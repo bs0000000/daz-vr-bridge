@@ -136,6 +136,7 @@ private:
 	QTcpServer*						m_server = nullptr;
 	QUdpSocket*						m_beacon = nullptr;		// answers "who is out there"
 	bool							m_discoverable = true;
+	QString							m_instanceId;		// this running Daz, for discovery to dedupe by
 	QHash<QTcpSocket*, Connection>	m_connections;
 	QHash<QString, BakedAsset>		m_assets;	// last bake, by content hash
 	PoseWatcher*					m_poseWatcher = nullptr;
