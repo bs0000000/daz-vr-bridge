@@ -35,6 +35,11 @@ namespace DazVrBridge
         float _nextPing;
         float _nextReconnect;
         string _savedToken = "";
+        // Nothing is dialled until somebody asks. The start screen not calling Connect
+        // was never enough on its own: the reconnect arm below sees a disconnected
+        // client on the very first Update and dials, which is exactly the "it connects
+        // before I have read the screen" this was supposed to have fixed.
+        bool _asked;
 
         /// True once the control connection is encrypted end to end.
         public bool Secure => Control != null && Control.Secure;
@@ -74,6 +79,7 @@ namespace DazVrBridge
             // The start screen connects when it is ready, so it can apply saved settings
             // first rather than have a connection race the fields that configure it.
             if (!FindAnyObjectByType<StartScreen>()) ConnectControl();
+            else _asked = false;
         }
 
         /// Drop whatever is open and dial again with the current host, port and code.
@@ -126,7 +132,10 @@ namespace DazVrBridge
 
                 case BridgeClient.State.Disconnected:
                 case BridgeClient.State.Failed:
-                    if (Time.time >= _nextReconnect) ConnectControl();
+                    // Reconnecting is automatic; the FIRST connection is not. Once
+                    // somebody has pressed Connect, a Daz that restarts should be
+                    // picked up again without them pressing anything.
+                    if (_asked && Time.time >= _nextReconnect) ConnectControl();
                     break;
             }
         }
@@ -136,6 +145,7 @@ namespace DazVrBridge
 
         void ConnectControl()
         {
+            _asked = true;
             _nextReconnect = Time.time + ReconnectDelay;
             Bulk.Dispose(); // a new control session invalidates the old bulk one
             Control.Connect(host, port, pairingCode, null, _savedToken);

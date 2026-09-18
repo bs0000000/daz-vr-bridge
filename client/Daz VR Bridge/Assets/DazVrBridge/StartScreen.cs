@@ -260,50 +260,90 @@ namespace DazVrBridge
 
             Fill(go.transform, Ground);
 
-            var panel = Box(go.transform, "panel", Panel, new Vector2(520f, 640f));
+            // Two columns, and the panel's height follows its contents rather than being
+            // a number I picked. A single column grew past the bottom of the screen the
+            // moment discovery and un-pairing were added to it, and a settings screen
+            // whose settings are off the screen is not a settings screen.
+            var panel = Box(go.transform, "panel", Panel, new Vector2(880f, 0f));
             var layout = panel.gameObject.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(36, 36, 32, 32);
-            layout.spacing = 14f;
+            layout.padding = new RectOffset(34, 34, 28, 28);
+            layout.spacing = 12f;
             layout.childForceExpandHeight = false;
             layout.childControlHeight = true;
             layout.childControlWidth = true;
+            var fitter = panel.gameObject.AddComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             Heading(panel, "Daz VR Bridge");
-            Caption(panel, "The plugin's pane in Daz shows the address and the pairing code.");
 
-            _found = Dropdown(panel, "Found on the network", new[] { "looking..." }, 0);
+            var columns = Row(panel, 26f);
+            var left = Column(columns);
+            var right = Column(columns);
+
+            Caption(left, "The VR Bridge pane in Daz shows the address and the code.");
+            _found = Dropdown(left, "Found on the network", new[] { "looking..." }, 0);
             _found.onValueChanged.AddListener(index =>
             {
                 if (_discovery != null && index >= 0 && index < _discovery.Servers.Count)
                     Take(_discovery.Servers[index]);
             });
 
-            _host = Field(panel, "Daz machine", session ? session.host : "127.0.0.1");
+            _host = Field(left, "Daz machine", session ? session.host : "127.0.0.1");
             _host.onValueChanged.AddListener(_ => _touchedHost = true);
-            _port = Field(panel, "Port", (session ? session.port : BridgeFrame.DefaultPort).ToString());
-            _code = Field(panel, "Pairing code", session ? session.pairingCode : "", "six digits; not needed on this machine");
+            _port = Field(left, "Port", (session ? session.port : BridgeFrame.DefaultPort).ToString());
+            _code = Field(left, "Pairing code (six digits)", session ? session.pairingCode : "");
 
-            Caption(panel, "These decide what gets baked. Changing one means fetching the scene again.");
-            _textures = Dropdown(panel, "Textures", new[] { "none", "opacity", "full" },
+            Caption(right, "What gets baked. Changing one means fetching the scene again.");
+            _textures = Dropdown(right, "Textures", new[] { "none", "opacity", "full" },
                 loader ? Mathf.Max(0, System.Array.IndexOf(new[] { "none", "opacity", "full" }, loader.textures)) : 2);
-            _texMax = Field(panel, "Texture size", (loader ? loader.texMax : 1024).ToString(), "longest edge in pixels");
-            _influences = Dropdown(panel, "Bones per vertex", new[] { "4", "8" }, loader && loader.influences == 8 ? 1 : 0);
-            _region = Field(panel, "Region radius", loader ? loader.regionRadius.ToString(CultureInfo.InvariantCulture) : "0",
-                "cm around Daz's selection; 0 for the whole scene");
-            _hulls = Check(panel, "Approximate strand hair", loader == null || loader.hullProxies);
+            _texMax = Field(right, "Texture size (px)", (loader ? loader.texMax : 1024).ToString());
+            _influences = Dropdown(right, "Bones per vertex", new[] { "4", "8" }, loader && loader.influences == 8 ? 1 : 0);
+            _region = Field(right, "Region radius (cm, 0 = all)",
+                loader ? loader.regionRadius.ToString(CultureInfo.InvariantCulture) : "0");
+            _hulls = Check(right, "Approximate strand hair", loader == null || loader.hullProxies);
 
             _status = Caption(panel, "");
             _status.fontSize = 15f;
 
-            _connect = Action(panel, "Connect", Apply);
+            var buttons = Row(panel, 12f);
+            _connect = Action(Column(buttons), "Connect", Apply);
             // Un-pairing, from the side that holds the token. The other side of the
             // same coin is "Forget paired" in the VR Bridge pane, which drops every
             // headset at once by changing the key the tokens are signed with.
-            Action(panel, "Forget the saved session", () =>
+            Action(Column(buttons), "Forget the saved session", () =>
             {
                 session?.ForgetSession();
                 Refresh();
             });
+        }
+
+        // A row of equal columns. Everything else here stacks; these two do not.
+        static RectTransform Row(RectTransform parent, float spacing)
+        {
+            var go = new GameObject("row", typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var layout = go.AddComponent<HorizontalLayoutGroup>();
+            layout.spacing = spacing;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childAlignment = TextAnchor.UpperLeft;
+            return (RectTransform)go.transform;
+        }
+
+        static RectTransform Column(RectTransform parent)
+        {
+            var go = new GameObject("column", typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var layout = go.AddComponent<VerticalLayoutGroup>();
+            layout.spacing = 9f;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            go.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            return (RectTransform)go.transform;
         }
 
         // ---- small builders, so the layout above reads as a layout
@@ -340,6 +380,9 @@ namespace DazVrBridge
         static TextMeshProUGUI Caption(RectTransform parent, string text)
         {
             var t = Label(parent, text, 14f, Muted);
+            // Sentences, unlike field labels, are longer than the column they sit in.
+            // They wrap, and the layout takes their height from what wrapping produced.
+            t.textWrappingMode = TextWrappingModes.Normal;
             t.textWrappingMode = TextWrappingModes.Normal;
             return t;
         }

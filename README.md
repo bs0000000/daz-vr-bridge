@@ -60,7 +60,8 @@ and the region radius -- which are deliberately *not* on the wheel: everything t
 cost a full re-bake and re-download, and sitting beside a Connect button says so. Settings are remembered.
 
 The screen waits for Connect rather than dialling on its own: a setup screen that connects before anyone has
-read it is not a setup screen. It gets out of the way once a scene is up, and comes back if the connection
+read it is not a setup screen. Nothing is dialled until someone asks; after that, reconnecting is automatic,
+so a Daz that restarts is picked up without anyone pressing anything again. It gets out of the way once a scene is up, and comes back if the connection
 drops. The same five bake options are on the panel's Scene tab in the headset, so a texture size can be
 changed without going back to the desk.
 
