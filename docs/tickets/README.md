@@ -53,7 +53,8 @@ shows up.
 
 ## 2 · The backlog
 
-Seventeen tickets, `DVB-1` to `DVB-17`, all in `Backlog`. Promote what you want next to
+It started as seventeen tickets, `DVB-1` to `DVB-17`, all in `Backlog`. It has grown since —
+Linear has the current count, and this sentence will not. Promote what you want next to
 `Ready for Claude`.
 
 `backlog.csv` and `backlog_source.py` are how they got there and are now history: Linear

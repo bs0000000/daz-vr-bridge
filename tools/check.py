@@ -14,12 +14,22 @@ What it cannot do is run a line of the plugin or the client. The framing code
 is Qt, the client is Unity, and the only real verification is the headset --
 see CLAUDE.md. A pass here means "nothing is contradicting itself on disk",
 which is worth exactly that much and no more.
+
+Two limits worth knowing before you trust a green run:
+
+  * Message types are matched as `noun.verb`, lowercase letters only. A message
+    named with an underscore or a digit -- `node.property_set`, `pose.v2` --
+    is invisible to both halves of the catalog check, and would pass
+    undocumented without a word. Name new messages in the existing style.
+  * Error codes are not checked at all. They are built in ternaries and passed
+    through variables, so there is no way to scan for them that is not mostly
+    false positives. PROTOCOL.md's list is maintained by hand.
 """
 
 import json
 import re
 import sys
-from fnmatch import fnmatch
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -113,17 +123,22 @@ def check_profile_contents():
             fail(check, f"{rel(source)} is not valid JSON: {error}")
             continue
 
+        where = rel(source)
         dump_path = source.with_suffix(".bones.txt")
         if not dump_path.exists():
-            print(f"  {rel(source)}: no {rel(dump_path)}, bone names not checked")
+            # Loud, because the alternative is a green run that checked almost
+            # nothing: with no dump there is no list of real bone names, so a
+            # profile made entirely of typos passes this section in silence.
+            warn(check, f"{where}: no {rel(dump_path)}, so NOT ONE bone name in this profile "
+                        f"was checked. Capture the skeleton the way "
+                        f"{rel(PROFILES / 'genesis9.bones.txt')} was, or treat a pass here as "
+                        f"covering only the copies being identical.")
             continue
 
         bones = read_bone_dump(dump_path)
         if not bones:
             fail(check, f"{rel(dump_path)} parsed to zero bones")
             continue
-
-        where = rel(source)
 
         def known(name, context):
             if name not in bones:
@@ -191,8 +206,14 @@ def check_profile_contents():
         # Only a warning: RigProfile.IsGrabbable consults these patterns just
         # when `grabbable` is empty, so for a profile with an explicit list
         # they are a fallback, and may name bones this rig has never had.
+        #
+        # Matched case-insensitively because RigProfile.GlobToRegex compiles
+        # with RegexOptions.IgnoreCase. Genesis 9's bone names are all
+        # lowercase so it makes no difference there, but Genesis 8's are
+        # camelCase, and a case-sensitive match here would warn about
+        # patterns that work perfectly well in Unity.
         for pattern in profile.get("hidden", {}).get("patterns", []):
-            if not any(fnmatch(bone, pattern) for bone in bones):
+            if not any(fnmatchcase(bone.lower(), pattern.lower()) for bone in bones):
                 warn(check, f"{where}: hidden pattern '{pattern}' matches no bone in {rel(dump_path)}")
 
         mirror = profile.get("mirror", {})

@@ -32,7 +32,7 @@ for small frequent frames, *bulk* for scene assets.
 |---|---|
 | What is this, how is the plugin built, what phase is it in? | `README.md` |
 | What is on the wire? Message fields, framing, crypto, discovery? | `protocol/PROTOCOL.md` — authoritative |
-| How is the Unity side wired up? What does each `.cs` file do? What do the VR controls do? | `client/README.md` |
+| How is the Unity side wired up? What do the VR controls do? | `client/README.md` |
 | What do the rig profile's fields mean? | `profiles/genesis9.json` — it is commented inline |
 | How do tickets work, what states and labels exist? | `docs/tickets/README.md` |
 | Why is it built this way? | **Not in the repository.** See below. |
@@ -41,6 +41,15 @@ for small frequent frames, *bulk* for scene assets.
 says so itself on line 3, and it is the only file both halves are written against.
 
 `TODOS.md` is superseded — the backlog moved to Linear. Do not add to it.
+
+**`client/README.md`'s file table is behind the code.** It describes 21 of the 35 first-party
+`.cs` files. Undocumented, and you will have to read them: `PanelMenu.cs`, `VrPanel.cs`,
+`DeskSync.cs`, `EditSync.cs`, `PoseTakes.cs`, `StartScreen.cs`, `VrMenu.cs`, `LanDiscovery.cs`,
+`BridgeCrypto.cs`, `BridgeProfiler.cs`, `BindingLabels.cs`, `BodyCollisionRig.cs`,
+`DztTexture.cs`, `NodeTag.cs`. The in-VR panel — how a row is declared, what `Read`/`Write`/
+`Done` do, and the ceiling on how many rows fit — is entirely in `VrPanel.cs` and
+`PanelMenu.cs` and written down nowhere. Budget for reading them, and add a row to that table
+when you touch one.
 
 **The design doc is unreachable.** `README.md` and `PROTOCOL.md` both point at `claude.ai`
 artifact links for "the full rationale". Those are readable only by their author, not from a
@@ -117,6 +126,14 @@ shut), and that `PROTOCOL.md` and both sides' source agree on the message catalo
 Python only. Run it before every commit, and always after touching a profile or the protocol.
 
 A pass means nothing contradicts itself on disk. It does not mean anything works.
+
+**Read the warnings, not just the exit code.** The bone-name half of that check needs a
+skeleton dump — `profiles/<rig>.bones.txt`, the rig as Daz reports it, with rotation orders
+and per-axis limits. Only Genesis 9 has one, and nothing in `tools/` generates one: the
+existing dump was captured by hand from a real figure. So a *new* rig profile is checked only
+for the two copies being identical, and a green run on one of those is close to meaningless.
+The check says so loudly when it happens. Repeat that caveat in your report rather than
+letting `exit 0` speak for you.
 
 ## What you cannot verify
 

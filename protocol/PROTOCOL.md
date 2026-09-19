@@ -259,10 +259,21 @@ The manifest's `assets` entries for textures also carry `w`, `h`, `mips` and
 
 ## Error codes
 
-`hello_required`, `protocol_mismatch`, `bad_role`, `bad_pairing_code`, `unknown_session`,
+`hello_required`, `protocol_mismatch`, `bad_role`, `bad_pairing_code`, `bad_token`, `unknown_session`,
 `wrong_connection`, `asset_unknown`, `asset_failed`, `commit_failed`, `selftest_state`, `not_implemented`, `busy`,
-`unknown_node`,
+`unknown_node`, `bad_target`,
+`no_crypto`, `encryption_required`, `bad_key`,
 `deferred_v2`, `unknown_type`.
+
+`bad_target` is what a `node.*` message aimed at a bone gets back: a bone belongs to its
+figure and is not a node of its own. The crypto three come from the handshake — `no_crypto`
+and `encryption_required` when the two ends disagree about whether to encrypt, `bad_key` when
+the premaster does not decrypt.
+
+`tools/check.py` does **not** check this list against the code. Unlike message types, error
+codes are built in ternaries and passed through variables, so scanning for them reliably is
+not possible; these five were found by hand and there may be more. If you add a code, add it
+here yourself — nothing will remind you.
 
 ## Conventions the client must honor
 
