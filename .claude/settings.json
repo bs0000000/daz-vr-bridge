@@ -1,0 +1,37 @@
+{
+  "$comment": [
+    "Committed settings: every worktree and every session starts here.",
+    "Machine-specific things (paths to Daz, Qt, Unity) belong in settings.local.json,",
+    "which is gitignored. See CLAUDE.md.",
+    "",
+    "includeCoAuthoredBy is false because this repository's commits are written as",
+    "the project's own voice. History before DVB-29 carries a Co-Authored-By trailer;",
+    "new commits do not.",
+    "",
+    "The deny list is the vendored-code boundary made mechanical rather than left to",
+    "prose: the Unity template's samples and the embedded XR package are not ours to",
+    "edit, and they are nearly 600 of the 807 tracked files, so an edit landing there",
+    "is far more likely to be a mistake than an intention."
+  ],
+
+  "includeCoAuthoredBy": false,
+
+  "permissions": {
+    "allow": [
+      "Bash(python3 tools/check.py)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git branch:*)",
+      "Bash(git grep:*)"
+    ],
+    "deny": [
+      "Edit(client/Daz VR Bridge/Packages/com.unity.xr.management/**)",
+      "Edit(client/Daz VR Bridge/Assets/TextMesh Pro/**)",
+      "Edit(client/Daz VR Bridge/Assets/TutorialInfo/**)",
+      "Edit(client/Daz VR Bridge/Assets/XRI/**)"
+    ]
+  }
+}

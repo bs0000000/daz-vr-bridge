@@ -3,6 +3,18 @@
 #
 #   .\tools\smoke-test.ps1                       # localhost, default port
 #   .\tools\smoke-test.ps1 -HostName 192.168.1.20 -Code 123456
+#
+#   NEEDS      Daz Studio running, with the built plugin loaded and the VR Bridge
+#              pane started, listening on the port below. PowerShell to run it.
+#   NEEDS NOT  Unity or a headset -- this stands in for the client.
+#   WHO        Whoever is sitting at the Daz machine. An agent on a Linux
+#              worktree has no Daz to point this at and should not try; the
+#              check that always runs is `python3 tools/check.py`.
+#
+# Encryption is not implemented here, so the pane needs encryption turned off
+# (or the connection has to be loopback, which may talk in the clear).
+# `tools/test-smoke.py` runs this same script against a mock plugin instead,
+# which needs no Daz.
 
 param(
     [string]$HostName = "127.0.0.1",

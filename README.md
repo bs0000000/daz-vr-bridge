@@ -5,6 +5,10 @@ Daz Studio stays the source of truth; the headset gets a lightweight copy of the
 and sends poses back as undo steps.
 
 Design doc: https://claude.ai/code/artifact/bd7f02aa-d311-43f6-9e9a-a20a8f9e15b9
+**Readable only when signed in as its author — not from a checkout, and not by an agent.**
+Where something here says "see the design doc", that rationale is not in the repository.
+`protocol/PROTOCOL.md` is the reference card for the wire format and is complete on its own;
+for anything else, ask rather than go looking.
 
 **Measured**, in a player build rather than the editor: **1.3 ms of a 6.9 ms frame budget at 144 Hz**, on four
 Genesis 9 figures (27,087 verts and 123 bones each) across a 47-node scene, single-pass instanced at
@@ -18,7 +22,13 @@ plugin/     Daz Studio 6 plugin (C++/Qt 6). Pane + TCP server. Built from the DS
 client/     Unity 6 project (OpenXR → SteamVR). Socket client, scene loader, posing UX.
 protocol/   PROTOCOL.md — the wire format and message catalog both sides code against.
 profiles/   Rig profiles (IK chains, twist bones, grabbable/hidden bones) per Genesis generation.
+tools/      Test harnesses. tools/check.py runs anywhere; the rest need Windows, and say so.
+docs/       How the Linear tracker is set up and how work moves through it.
+CLAUDE.md   Orientation for anyone — person or agent — arriving at a checkout cold.
 ```
+
+`python3 tools/check.py` is the one check that needs no Daz, no Unity and no Windows: it
+holds the two rig-profile copies to each other and `PROTOCOL.md` to both sides' source.
 
 ## Building the plugin
 
@@ -211,6 +221,8 @@ some other reason.
 - **A Genesis 8 profile.**
 - A better hand: the controller's own model, with what each button does written on it.
 - See the backlog assessment for the rest: https://claude.ai/code/artifact/8f07cacf-be1c-49c6-8ceb-126895047f1f
+  — as with the design doc, readable only by its author. Superseded in any case: the backlog
+  moved to Linear, and nothing needs to go looking for this.
 
 The backlog above is kept here as a summary. The tickets themselves live in Linear -- `docs/tickets/README.md`
 has the workspace shape, the working loop, and the backlog as an importable file.
