@@ -1,2 +1,11 @@
+# Scene manifests captured from a running Daz by smoke-test.ps1. They are a
+# few MB each, they carry whatever local paths the capturing machine had, and
+# they are only ever evidence for the investigation that captured them. Keep
+# them out; if one matters, attach it to the ticket, where it has a reason
+# beside it. (drift1-3.json were removed in DVB-29 for exactly this: 6.5 MB of
+# manifests left over from the cumulative-drift hunt that cd9633a closed. Git
+# history still has them.)
 last-manifest.json
+manifest.json
+drift*.json
 assets/

@@ -53,8 +53,14 @@ No XR Interaction Toolkit rig needed. Two components:
   interaction profile for your controllers enabled — Project Settings → XR Plug-in
   Management → OpenXR → Interaction Profiles).
 - **BoneHandles** on the `Bridge` object: after each load, a small sphere at every
-  grabbable bone from the figure's rig profile (`Resources/RigProfiles/<rig>.json`, kept
-  in sync with `/profiles`).
+  grabbable bone from the figure's rig profile (`Resources/RigProfiles/<rig>.json`).
+
+> **The rig profile exists twice.** `profiles/<rig>.json` at the repo root is the source;
+> Unity can only load from `Resources/`, so `Assets/DazVrBridge/Resources/RigProfiles/<rig>.json`
+> is a byte-identical copy of it. There is no build step that copies one to the other —
+> **edit one, copy it over the other, in the same commit.** `python3 tools/check.py` fails
+> if they drift apart, and also checks every bone the profile names against the skeleton
+> dump beside it.
 
 Handles sit at the middle of each bone segment and draw *through* the body (so the spine
 handles are visible), fading in as a controller comes within 30 cm and fully visible

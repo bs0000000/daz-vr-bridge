@@ -53,7 +53,8 @@ shows up.
 
 ## 2 · The backlog
 
-Seventeen tickets, `DVB-1` to `DVB-17`, all in `Backlog`. Promote what you want next to
+It started as seventeen tickets, `DVB-1` to `DVB-17`, all in `Backlog`. It has grown since —
+Linear has the current count, and this sentence will not. Promote what you want next to
 `Ready for Claude`.
 
 `backlog.csv` and `backlog_source.py` are how they got there and are now history: Linear
@@ -72,9 +73,18 @@ The loop:
 3. If *Done when* is missing or ambiguous, I ask **before** writing code rather than
    building the wrong thing well.
 4. I implement, and reference `DVB-12` in the commit message.
-5. I move it to **In Review** and comment what changed, what to rebuild (Unity, plugin,
+5. I run `python3 tools/check.py`, which is the only check that runs without Daz, Unity or
+   Windows — and is therefore the only thing I can honestly claim to have run.
+6. I move it to **In Review** and comment what changed, what to rebuild (Unity, plugin,
    or both), and what to look at in the headset.
-6. You try it and either move it to Done or say what is wrong, in the ticket.
+7. You try it and either move it to Done or say what is wrong, in the ticket.
+
+**In Review means waiting for the headset, not waiting for a code review.** Almost nothing
+here can be verified from a checkout: the plugin needs the Daz SDK and MSVC, the client needs
+Unity, and how a thing *feels* needs you wearing the headset. So a ticket arrives at you
+built and argued for, not tested, and I say which of those it is rather than implying a pass.
+`CLAUDE.md` at the repo root is the full version of this — what can be checked here, what
+cannot, and the conventions that used to live only in the commit log.
 
 **What makes a ticket I can take.** The *Done when* list. Not a description of the
 feature — a list of things that are either true or not true once it works. "Takes are
