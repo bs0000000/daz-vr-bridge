@@ -1,4 +1,17 @@
-"""Exercise smoke-test framing, unsolicited messages, undo/redo and assets without Daz."""
+"""Exercise smoke-test framing, unsolicited messages, undo/redo and assets without Daz.
+
+    NEEDS      PowerShell -- `powershell` (5.1, Windows) or `pwsh` (Core, any OS).
+    NEEDS NOT  Daz Studio, a built plugin, Unity, a headset, or Windows itself.
+    RUNS       anywhere PowerShell is installed. There is no PowerShell on a
+               plain Linux worktree, so an agent cannot usually run this --
+               `python3 tools/check.py` is the one that always works.
+
+This is a mock Daz: it stands up a TCP listener, plays the plugin's side of the
+conversation by hand, and drives `smoke-test.ps1` (the client half) against it.
+So it tests the PowerShell harness and the shape of the exchange, and not one
+line of the real plugin or the real client -- those are C++/Qt and C#/Unity and
+neither can be built here. See CLAUDE.md.
+"""
 import hashlib
 import json
 from pathlib import Path

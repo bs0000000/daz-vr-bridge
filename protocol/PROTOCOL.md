@@ -1,7 +1,13 @@
 # DAZ–VR Bridge wire protocol — v1
 
 Single source of truth for both sides. Change this file first, then the code.
-Full rationale lives in the design doc; this is the reference card.
+Full rationale lives in the design doc; this is the reference card. (That doc is a
+`claude.ai` artifact readable only by its author — see README.md. This card is meant to
+stand on its own, so if something here is not enough to code against, that is a fault in
+this file and worth fixing here rather than a pointer to follow.)
+
+`python3 tools/check.py` verifies that every message named below is one both the plugin and
+the client actually know, and that neither sends one this file does not list.
 
 ## Transport
 

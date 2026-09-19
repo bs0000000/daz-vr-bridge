@@ -6,6 +6,16 @@
 # vectors for SHA-256, HMAC-SHA256 and HKDF, and then runs them against each other:
 # records sealed on each side and opened on the other, a flipped bit, a replay, and
 # the handshake's RSA leg against a key the plugin actually generated.
+#
+#   NEEDS      Windows. MSVC 2022 (the vcvars64.bat path below), Qt 6 at the
+#              hard-coded $qt path below, the .NET SDK, and PowerShell. Both
+#              paths are literals -- edit them, they are not discovered.
+#   NEEDS NOT  Daz Studio, a built plugin, Unity, or a headset.
+#   WHO        Whoever has the Windows build machine. This is the only test the
+#              crypto has, so it is worth running whenever crypto.cpp or
+#              BridgeCrypto.cs changes -- but an agent on a Linux worktree
+#              cannot run it, and changing either file there means the change
+#              ships unverified. Say so rather than implying a pass.
 
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
